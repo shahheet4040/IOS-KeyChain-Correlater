@@ -1,13 +1,33 @@
 import sys
 from pathlib import Path
+import pytest
 
-# Ensure virtualenv site-packages and src are on sys.path
+# Ensure virtualenv site-packages, src, and harness are on sys.path
 _root = Path(__file__).resolve().parent.parent
 _venv_site = _root / ".venv" / "Lib" / "site-packages"
 _src = _root / "src"
+_harness = _root / "harness"
 
 if _venv_site.is_dir() and str(_venv_site) not in sys.path:
     sys.path.insert(0, str(_venv_site))
 
 if _src.is_dir() and str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
+
+if _harness.is_dir() and str(_harness) not in sys.path:
+    sys.path.insert(0, str(_harness))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_fake_fixtures():
+    """Ensures that synthetic test fixtures (out/fake) exist before tests run."""
+    fake_dir = _root / "out" / "fake"
+    keychain_file = fake_dir / "keychain.json"
+    ground_truth = fake_dir / "ground_truth.json"
+
+    if not keychain_file.is_file() or not ground_truth.is_file():
+        try:
+            from make_fake_extraction import generate_fake_extraction
+            generate_fake_extraction(fake_dir)
+        except Exception as e:
+            print(f"Notice: Synthetic fixture generation: {e}")

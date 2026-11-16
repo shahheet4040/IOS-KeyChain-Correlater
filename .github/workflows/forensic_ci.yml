@@ -35,8 +35,12 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install pytest anyio cryptography pydantic fastapi uvicorn reportlab openpyxl Pillow
+          pip install -r requirements.txt
           pip install -e .
+
+      - name: Generate Synthetic Forensic Test Fixtures
+        run: |
+          python harness/make_fake_extraction.py --out out/fake
 
       - name: Run Pytest Forensic Test Suite
         run: |
