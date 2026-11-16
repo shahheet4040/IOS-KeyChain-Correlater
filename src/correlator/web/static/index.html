@@ -273,6 +273,106 @@
             border: 1px solid var(--border);
             z-index: 10;
         }
+
+        /* ── Documentation & Architecture Styles ── */
+        .docs-hero {
+            background: linear-gradient(135deg, #1e293b 0%, #0d1527 100%);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        .docs-tab-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+            overflow-x: auto;
+        }
+        .docs-tab-btn {
+            background: #1e293b;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 9px 18px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+        .docs-tab-btn:hover {
+            color: #fff;
+            background: #2b3952;
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+        .docs-tab-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+        }
+        .docs-tab-pane { display: none; }
+        .docs-tab-pane.active { display: block; animation: fadeIn 0.2s ease-in; }
+        .docs-step-card {
+            background: #111827;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: all 0.2s ease;
+        }
+        .docs-step-card:hover {
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .docs-step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .docs-step-num {
+            width: 32px;
+            height: 32px;
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        .docs-callout {
+            background: rgba(30, 41, 59, 0.7);
+            border-left: 4px solid var(--primary);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 14px 0;
+            font-size: 0.88rem;
+            color: #cbd5e1;
+            line-height: 1.5;
+        }
+        .docs-callout.tip { border-left-color: #10b981; background: rgba(16, 185, 129, 0.08); }
+        .docs-callout.warn { border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
+        .docs-callout.danger { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+        .docs-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 900px) {
+            .docs-grid-2 { grid-template-columns: 1fr; }
+        }
     </style>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -291,6 +391,7 @@
 
         <nav class="nav-menu">
             <div class="nav-item active" onclick="switchView('overview')">📊 Overview Dashboard</div>
+            <div class="nav-item" onclick="switchView('docs')">📖 Tool Guide &amp; Architecture</div>
             <div class="nav-item" onclick="switchView('cases')">📁 Case Management</div>
             <div class="nav-item" onclick="switchView('triage')">⚡ Live USB & Recovery</div>
             <div class="nav-item" onclick="switchView('timeline')">💬 Unified Chat Timeline</div>
@@ -349,6 +450,7 @@
                         <button class="btn btn-primary" onclick="switchView('ingest')">📦 Ingest Cellebrite / GrayKey Dump</button>
                         <button class="btn btn-secondary" onclick="switchView('analysis')">⚡ Correlate Extraction & Keychain</button>
                         <button class="btn btn-secondary" onclick="switchView('search')">🔎 Deep Evidence Keyword Search</button>
+                        <button class="btn btn-secondary" style="border: 1px solid rgba(59, 130, 246, 0.4);" onclick="switchView('docs')">📖 Read Tool Guide &amp; Architecture</button>
                     </div>
                 </div>
             </div>
@@ -889,10 +991,384 @@
                 </div>
             </div>
 
+            <!-- 7. TOOL ARCHITECTURE & USER GUIDE VIEW -->
+            <div id="view-docs" class="view-panel">
+                <!-- Hero Section -->
+                <div class="docs-hero">
+                    <div>
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                            <span class="badge" style="background:rgba(59,130,246,0.2);color:#60a5fa;border:1px solid rgba(59,130,246,0.4);">
+                                🛡️ v2.0 Enterprise Digital Forensics
+                            </span>
+                            <span class="badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);">
+                                ● Court-Admissible Provenance
+                            </span>
+                            <span class="badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;border:1px solid rgba(245,158,11,0.4);">
+                                🔒 Zero Evidence Contamination
+                            </span>
+                        </div>
+                        <h1 style="font-size:1.55rem;font-weight:700;margin-bottom:6px;color:#fff;">
+                            iOS Keychain Correlator — Tool Architecture &amp; Examiner Guide
+                        </h1>
+                        <p style="color:var(--text-muted);font-size:0.92rem;max-width:860px;line-height:1.5;">
+                            An enterprise forensic suite engineered to triage iOS hardware, parse decrypted Keychain blobs, derive cryptographic candidate keys, decrypt SQLCipher databases without SEP brute-forcing, correlate suspect activity across chats and GPS coordinates, and generate court-admissible audit reports.
+                        </p>
+                    </div>
+                    <div>
+                        <button class="btn btn-primary" onclick="switchView('cases')">📁 Case Workspace</button>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <div class="docs-tab-bar">
+                    <button class="docs-tab-btn active" id="docs-btn-overview" onclick="switchDocsTab('overview')">💡 Purpose &amp; Problem Solved</button>
+                    <button class="docs-tab-btn" id="docs-btn-pipeline" onclick="switchDocsTab('pipeline')">⚙️ 7-Step Forensic Pipeline</button>
+                    <button class="docs-tab-btn" id="docs-btn-guide" onclick="switchDocsTab('guide')">📋 Examiner User Guide ("How To Work")</button>
+                    <button class="docs-tab-btn" id="docs-btn-storage" onclick="switchDocsTab('storage')">💾 Storage &amp; Databases Architecture</button>
+                    <button class="docs-tab-btn" id="docs-btn-faq" onclick="switchDocsTab('faq')">🔒 Access Tiers &amp; FAQ</button>
+                </div>
+
+                <!-- Tab Pane 1: Purpose & Problem Solved -->
+                <div id="docs-pane-overview" class="docs-tab-pane active">
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">1</div>
+                            <h3 style="font-size:1.15rem;color:#fff;">The Technical Challenge: Modern iOS Hardware Encryption</h3>
+                        </div>
+                        <p style="color:#d1d5db;line-height:1.6;font-size:0.92rem;">
+                            On modern Apple devices (A12 Bionic and newer, running iOS 15 through iOS 18+), user data is shielded by Apple's <strong>Secure Enclave Processor (SEP)</strong> and class-based Data Protection architecture (<code>kSecAttrAccessible</code>).
+                        </p>
+                        <div class="docs-grid-2" style="margin-top:14px;">
+                            <div style="background:#1a2333;padding:14px;border-radius:8px;border:1px solid var(--border);">
+                                <h4 style="color:#f87171;font-size:0.95rem;margin-bottom:6px;">❌ Why Passcode Brute-Forcing Fails</h4>
+                                <ul style="color:var(--text-muted);font-size:0.86rem;line-height:1.6;padding-left:18px;">
+                                    <li>Hardware enforces an enforced minimum 1000ms delay between passcode attempts.</li>
+                                    <li>Exponential rate-limiting and anti-hammering counters prevent automation.</li>
+                                    <li>10 failed passcode attempts trigger cryptographic factory wipe (obliterating Class keys).</li>
+                                </ul>
+                            </div>
+                            <div style="background:#1a2333;padding:14px;border-radius:8px;border:1px solid var(--border);">
+                                <h4 style="color:#34d399;font-size:0.95rem;margin-bottom:6px;">✔️ The Correlator Breakthrough</h4>
+                                <ul style="color:var(--text-muted);font-size:0.86rem;line-height:1.6;padding-left:18px;">
+                                    <li>Forensic extractions (Cellebrite, GrayKey, iTunes, AFC) yield the <strong>iOS Keychain</strong>.</li>
+                                    <li>Third-party apps (Signal, WhatsApp, WeChat, etc.) store database keys in this Keychain.</li>
+                                    <li>Correlator extracts candidate keys and tests them directly against SQLCipher without SEP interaction.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">2</div>
+                            <h3 style="font-size:1.15rem;color:#fff;">Supported Target Ecosystem &amp; Forensic Formats</h3>
+                        </div>
+                        <div class="docs-grid-2">
+                            <div>
+                                <h4 style="color:#60a5fa;font-size:0.95rem;margin-bottom:8px;">Target Applications Decrypted</h4>
+                                <ul style="color:#d1d5db;font-size:0.88rem;line-height:1.8;padding-left:18px;">
+                                    <li><strong>Signal Private Messenger</strong>: <code>signal.sqlite</code> (48-byte key, 32-byte plaintext header)</li>
+                                    <li><strong>WhatsApp Messenger</strong>: <code>ChatStorage.sqlite</code> (256-bit AES key, Cocoa timestamp normalization)</li>
+                                    <li><strong>WeChat / Tencent WCDB</strong>: <code>wechat.sqlite</code> (Custom 64,000 PBKDF2 iterations, 4096-byte page size)</li>
+                                    <li><strong>Apple Safari</strong>: <code>History.db</code> (Full browsing history, redirects, bookmarks, Cocoa epoch)</li>
+                                    <li><strong>General SQLCipher Databases</strong>: SQLCipher v1, v2, v3, v4, 4096 page size variants.</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 style="color:#60a5fa;font-size:0.95rem;margin-bottom:8px;">Forensic Ingestion Capabilities</h4>
+                                <ul style="color:#d1d5db;font-size:0.88rem;line-height:1.8;padding-left:18px;">
+                                    <li><strong>Cellebrite UFED</strong>: Physical/Full File System extractions and XML reports.</li>
+                                    <li><strong>Magnet GrayKey</strong>: Directory structures, root extractions, and keychain dumps.</li>
+                                    <li><strong>iTunes / Finder Backups</strong>: Encrypted and unencrypted logical backup trees with <code>Manifest.plist</code>.</li>
+                                    <li><strong>Live USB via AFC</strong>: Direct physical device triage, photo/media extraction, crash logs.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Pane 2: 7-Step Forensic Pipeline -->
+                <div id="docs-pane-pipeline" class="docs-tab-pane">
+                    <div class="docs-callout tip">
+                        <strong>Deterministic Execution:</strong> Every analysis run follows a strict 7-phase sequence guaranteeing repeatability, zero evidence modification, and mathematical chain of custody.
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">1</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 1: Hardware Triage &amp; Lockdown Pairing Discovery</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            When an iOS device is connected, the tool queries <code>usbmuxd</code> and the Lockdown service. It scans host directories (<code>/var/lib/lockdown</code> on Linux, <code>%APPDATA%\Apple Computer\Lockdown</code> on Windows) for valid <code>.plist</code> pairing records. A validated pairing record allows opening authorized backup sessions without requiring the suspect's passcode on screen.
+                        </p>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">2</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 2: Evidence Ingestion &amp; Integrity Hashing</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            Evidence is normalized into the case workspace. Before any processing occurs, <strong>pre-analysis SHA-256 digests</strong> are computed for all database files, WAL logs, and SHM shared memory files. Evidence files are mounted strictly read-only (<code>?mode=ro</code>) to preserve pristine state.
+                        </p>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">3</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 3: Keychain Candidate Key Extraction</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            Parses <code>keychain-2.db</code> or keychain export plists. Extracts secrets from <code>genp</code> (generic passwords), <code>inet</code> (internet passwords), and <code>keys</code>. Evaluates 32-byte raw hex keys, 48-byte Signal tokens, base64-encoded master keys, and generates 8-character SHA-256 key fingerprints (e.g. <code>a1b2c3d4</code>).
+                        </p>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">4</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 4: Multi-Profile SQLCipher Cryptographic Correlation</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            Candidate keys are systematically correlated against target databases using <strong>10 specialized decryption profiles</strong> (SQLCipher 4, SQLCipher 3, Signal-like 32-byte header, WeChat WCDB 64k iterations, SQLCipher 4096, etc.). Correlation executes non-destructively in RAM, verifying HMAC integrity on page 1 before proceeding.
+                        </p>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">5</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 5: Plaintext Database Export &amp; Evidence Isolation</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            Upon successful key match, the engine attaches the encrypted database and executes <code>sqlcipher_export('plaintext')</code>. This generates clean, decrypted standard SQLite databases saved to <code>decrypted_exports/</code>. Post-analysis SHA-256 hashes are recalculated on original evidence to verify zero alterations.
+                        </p>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">6</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 6: Multi-Disciplinary Forensic Intelligence</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            The decrypted databases are automatically ingested into three cross-evidence engines:
+                        </p>
+                        <ul style="color:#cbd5e1;font-size:0.88rem;line-height:1.7;padding-left:20px;margin-top:6px;">
+                            <li><strong>Unified Chat Timeline:</strong> Chronological stream of chats across Signal, WhatsApp, WeChat, and Safari browsing.</li>
+                            <li><strong>GPS &amp; Photo EXIF Heatmap:</strong> Extracts geotags from camera photos (APP1 EXIF) and plots suspect waypoints on an interactive map.</li>
+                            <li><strong>Automated Keyword Alerts:</strong> High-confidence regex scanner for Crypto addresses, IBANs, Credit Cards (Luhn verified), Narcotics, Weapons, and Tokens.</li>
+                        </ul>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <div class="docs-step-header">
+                            <div class="docs-step-num">7</div>
+                            <h4 style="color:#60a5fa;font-size:1.05rem;">Phase 7: Court-Admissible Reporting &amp; Chain-of-Custody</h4>
+                        </div>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;">
+                            Compiles the full audit history into <code>provenance_map.json</code>, <code>report.html</code>, and formal <strong>Court-Ready PDF Reports</strong> containing examiner credentials, device serial numbers, cryptographic fingerprints, and integrity hashes.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Tab Pane 3: Examiner User Guide -->
+                <div id="docs-pane-guide" class="docs-tab-pane">
+                    <div class="docs-callout warn">
+                        <strong>Examiner SOP:</strong> Follow these standard operating procedures to acquire, decrypt, investigate, and report evidence using the Web Dashboard.
+                    </div>
+
+                    <div class="docs-step-card">
+                        <h4 style="color:#38bdf8;font-size:1rem;margin-bottom:8px;">Workflow A: Triaging a Live iOS Device via USB</h4>
+                        <ol style="color:#d1d5db;font-size:0.88rem;line-height:1.8;padding-left:20px;">
+                            <li>Connect the suspect iOS device to the forensic workstation via certified Lightning/USB-C cable.</li>
+                            <li>Navigate to <strong>⚡ Live USB &amp; Recovery</strong> in the sidebar.</li>
+                            <li>Click <strong>🔄 Rescan USB</strong> to evaluate connected hardware.</li>
+                            <li>Observe the <strong>Access Tier Badge</strong>:
+                                <ul style="margin-top:4px;">
+                                    <li><span class="badge" style="background:rgba(16,185,129,0.2);color:#34d399;">FULL_BACKUP</span>: Device is AFU, paired, and has no backup password. You can immediately trigger a logical backup.</li>
+                                    <li><span class="badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;">ENCRYPTED_UNKNOWN</span>: Backup password is set. Use the <strong>AFC Photo Fallback</strong> tab to pull photos and media, or run candidate dictionaries through the <strong>Backup Password Dictionary Cracker</strong>.</li>
+                                    <li><span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BFU_LOCKED</span>: Device rebooted; keybag is sealed. Keep device powered on until passcode is entered.</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <h4 style="color:#38bdf8;font-size:1rem;margin-bottom:8px;">Workflow B: Ingesting Forensic Dumps (Cellebrite / GrayKey / iTunes)</h4>
+                        <ol style="color:#d1d5db;font-size:0.88rem;line-height:1.8;padding-left:20px;">
+                            <li>Navigate to <strong>📦 Dump Ingestion</strong>.</li>
+                            <li>Enter the local path to the extraction directory (or Cellebrite folder containing <code>report.xml</code>).</li>
+                            <li>Click <strong>🔍 Inspect Dump</strong> to auto-detect structure, iOS version, and available keychain files.</li>
+                            <li>Click <strong>🚀 Ingest &amp; Correlate</strong> to normalize the dump and start automated decryption.</li>
+                        </ol>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <h4 style="color:#38bdf8;font-size:1rem;margin-bottom:8px;">Workflow C: Exploring Decrypted Chats, Maps &amp; Alerts</h4>
+                        <ol style="color:#d1d5db;font-size:0.88rem;line-height:1.8;padding-left:20px;">
+                            <li>Open <strong>💬 Unified Chat Timeline</strong> to view cross-app messages from Signal, WhatsApp, WeChat, and Safari. Use the search bar to locate suspect usernames or phone numbers. Click <strong>📥 Export Timeline CSV</strong> for spreadsheet analysis.</li>
+                            <li>Open <strong>📍 GPS &amp; Photo Heatmap</strong> to view photos extracted from <code>/DCIM</code> mapped geographically with timestamps and camera metadata. Click <strong>📥 Export GeoJSON</strong> for ArcGIS or Google Earth.</li>
+                            <li>Open <strong>🚨 Keyword Alerts</strong> to view high-priority alerts (Crypto wallets, IBANs, Credit Cards, Narcotics, Firearms). Enter case-specific keywords into the search box to scan all databases simultaneously.</li>
+                            <li>Open <strong>🔓 Browse Decrypted Data</strong> to inspect individual database tables, schema columns, and rows directly in the browser.</li>
+                        </ol>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <h4 style="color:#38bdf8;font-size:1rem;margin-bottom:8px;">Workflow D: Generating Official Court-Ready PDF Reports</h4>
+                        <ol style="color:#d1d5db;font-size:0.88rem;line-height:1.8;padding-left:20px;">
+                            <li>Navigate to <strong>📁 Case Management</strong>.</li>
+                            <li>Locate the target case in the Active Forensic Cases table.</li>
+                            <li>Click <strong>📄 PDF</strong> to immediately generate and download the formal, printable Forensic Examination PDF Report.</li>
+                            <li>Click <strong>🗺️ Map</strong> to view the interactive visual chain of custody in <strong>Process &amp; Provenance Map</strong>.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Tab Pane 4: Storage Architecture -->
+                <div id="docs-pane-storage" class="docs-tab-pane">
+                    <div class="docs-step-card">
+                        <h4 style="color:#fff;font-size:1.1rem;margin-bottom:12px;">Evidence &amp; Decrypted Database Storage Architecture</h4>
+                        <p style="color:#d1d5db;font-size:0.9rem;line-height:1.6;margin-bottom:14px;">
+                            The forensic suite strictly adheres to digital evidence preservation standards. Original seized files are never modified, and all decrypted data is stored in standard, accessible SQLite databases:
+                        </p>
+                        <div class="table-responsive">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Artifact Type</th>
+                                        <th>Storage Location</th>
+                                        <th>Format</th>
+                                        <th>Purpose / Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Decrypted Databases</strong></td>
+                                        <td><code>out/analysis_results/decrypted_exports/</code></td>
+                                        <td>Standard SQLite (<code>.sqlite</code> / <code>.db</code>)</td>
+                                        <td>Pristine plaintext databases (Signal, WhatsApp, Safari) readable by DB Browser or any forensic suite.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Case Registry</strong></td>
+                                        <td><code>cases_workspace/cases/&lt;case-id&gt;/</code></td>
+                                        <td>JSON (<code>case_meta.json</code>)</td>
+                                        <td>Persistent multi-device case management, examiner logs, notes, and analysis execution counts.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Device Results</strong></td>
+                                        <td><code>cases_workspace/.../devices/&lt;dev-id&gt;/results/</code></td>
+                                        <td>JSON (<code>&lt;result-id&gt;.json</code>)</td>
+                                        <td>Raw output data, cryptographic key fingerprints, and table statistics for each device run.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Provenance Audit Trail</strong></td>
+                                        <td><code>out/&lt;case&gt;/provenance_map.json</code></td>
+                                        <td>JSON</td>
+                                        <td>Complete cryptographic timeline documenting triage, key derivation, profile applied, and integrity hashes.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Offline Reports</strong></td>
+                                        <td><code>out/&lt;case&gt;/report.html</code> &amp; <code>report.json</code></td>
+                                        <td>HTML / JSON / PDF</td>
+                                        <td>Standalone, self-contained interactive report with embedded search and verification records.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Pane 5: Access Tiers & FAQ -->
+                <div id="docs-pane-faq" class="docs-tab-pane">
+                    <div class="docs-step-card">
+                        <h4 style="color:#fff;font-size:1.1rem;margin-bottom:12px;">iOS Access Tiers Decision Matrix</h4>
+                        <div class="table-responsive">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Access Tier</th>
+                                        <th>Lock State</th>
+                                        <th>Pairing Record</th>
+                                        <th>Backup Password</th>
+                                        <th>Available Forensic Exploitation</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="badge" style="background:rgba(16,185,129,0.2);color:#34d399;">FULL_BACKUP</span></td>
+                                        <td>AFU (After First Unlock)</td>
+                                        <td>Valid on Workstation</td>
+                                        <td>None Set</td>
+                                        <td><strong>Maximum Access</strong>: Full logical backup with Keychain, chats, photos, and databases without passcode entry.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;">ENCRYPTED_UNKNOWN</span></td>
+                                        <td>AFU (After First Unlock)</td>
+                                        <td>Valid on Workstation</td>
+                                        <td>Password Set (Unknown)</td>
+                                        <td><strong>Partial + Brute Force</strong>: AFC extracts /DCIM photos &amp; crash logs; dictionary cracker attacks <code>Manifest.plist</code>.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge" style="background:rgba(59,130,246,0.2);color:#60a5fa;">PARTIAL_AFC</span></td>
+                                        <td>AFU / BFU</td>
+                                        <td>Valid on Workstation</td>
+                                        <td>Any</td>
+                                        <td><strong>Media Access</strong>: Apple File Conduit pulls camera photos, DCIM videos, voice recordings, system logs.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BFU_LOCKED</span></td>
+                                        <td>BFU (Before First Unlock)</td>
+                                        <td>Valid on Workstation</td>
+                                        <td>Any</td>
+                                        <td><strong>Minimal Access</strong>: Keybag is sealed in hardware. Most filesystems encrypted. Crash logs only. Do not reboot!</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge" style="background:#374151;color:#9ca3af;">UNPAIRED</span></td>
+                                        <td>Any</td>
+                                        <td>None</td>
+                                        <td>Any</td>
+                                        <td><strong>No Host Trust</strong>: Device prompts for passcode &amp; "Trust this Computer". Screen entry required.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="docs-step-card">
+                        <h4 style="color:#fff;font-size:1.05rem;margin-bottom:8px;">Frequently Asked Questions</h4>
+                        <div style="margin-top:12px;">
+                            <strong style="color:#60a5fa;">Q: Does this tool modify any original evidence?</strong>
+                            <p style="color:#d1d5db;font-size:0.88rem;margin:4px 0 14px 0;">
+                                No. All database reads are performed through read-only URIs (<code>?mode=ro</code>) or isolated scratch copies. Pre-analysis and post-analysis SHA-256 hashes are verified automatically to prove zero modification.
+                            </p>
+
+                            <strong style="color:#60a5fa;">Q: Can this tool decrypt WhatsApp or Signal without the Keychain?</strong>
+                            <p style="color:#d1d5db;font-size:0.88rem;margin:4px 0 14px 0;">
+                                No. SQLCipher databases use 256-bit AES encryption. Without the Keychain keys, cracking AES-256 is mathematically intractable. The power of this tool lies in extracting and correlating the keys stored inside the iOS Keychain.
+                            </p>
+
+                            <strong style="color:#60a5fa;">Q: How do I export data for legal submission or court?</strong>
+                            <p style="color:#d1d5db;font-size:0.88rem;margin:4px 0 0 0;">
+                                Use the <strong>📄 PDF</strong> button in Case Management to generate the official Forensic Examination Report, export the chat stream via <strong>Export Timeline CSV</strong>, and export geotagged coordinates via <strong>Export GeoJSON</strong>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
     <script>
+        function switchDocsTab(tabId) {
+            document.querySelectorAll('.docs-tab-pane').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.docs-tab-btn').forEach(el => el.classList.remove('active'));
+
+            const targetPane = document.getElementById('docs-pane-' + tabId);
+            if (targetPane) targetPane.classList.add('active');
+
+            const targetBtn = document.getElementById('docs-btn-' + tabId);
+            if (targetBtn) targetBtn.classList.add('active');
+        }
+
         function switchView(viewName) {
             document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -902,6 +1378,7 @@
 
             const titles = {
                 overview: 'Overview Dashboard',
+                docs: 'Tool Architecture & Forensic Examiner Guide',
                 cases: 'Case Management',
                 triage: 'Live USB Triage & Password Recovery',
                 timeline: 'Unified Cross-Application Chat Timeline',
