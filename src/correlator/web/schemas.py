@@ -82,3 +82,18 @@ class CrackBackupRequest(BaseModel):
     wordlist_path: Optional[str] = Field(None, description="Path to candidate password dictionary")
     candidate_passwords: Optional[List[str]] = Field(None, description="Direct list of password strings to test")
 
+
+class TimelineRequest(BaseModel):
+    directory: Optional[str] = Field(None, description="Directory containing decrypted databases")
+    max_records: int = Field(5000, description="Maximum number of chronological events")
+
+
+class GeospatialRequest(BaseModel):
+    directory: Optional[str] = Field(None, description="Directory containing seized images/AFC media")
+
+
+class WatchlistScanRequest(BaseModel):
+    directory: Optional[str] = Field(None, description="Directory containing decrypted SQLite databases")
+    custom_keywords: Optional[List[str]] = Field(None, description="Additional case-specific watch terms")
+
+

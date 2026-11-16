@@ -224,7 +224,58 @@
             white-space: pre-wrap;
             margin-top: 12px;
         }
+
+        /* Timeline & Chat Styles */
+        .chat-bubble {
+            background: #1e293b;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            transition: transform 0.1s ease;
+        }
+        .chat-bubble:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+            background: #243248;
+        }
+        .chat-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .chat-text {
+            font-size: 0.95rem;
+            color: #f8fafc;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        /* Watchlist Alert Cards */
+        .alert-card {
+            background: #111827;
+            border-left: 4px solid var(--primary);
+            border-radius: 6px;
+            padding: 14px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+        }
+        .alert-card.critical { border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.05); }
+        .alert-card.high { border-left: 4px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
+        .alert-card.medium { border-left: 4px solid #3b82f6; background: rgba(59, 130, 246, 0.05); }
+
+        #geospatial-map {
+            height: 440px;
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            z-index: 10;
+        }
     </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -242,6 +293,9 @@
             <div class="nav-item active" onclick="switchView('overview')">📊 Overview Dashboard</div>
             <div class="nav-item" onclick="switchView('cases')">📁 Case Management</div>
             <div class="nav-item" onclick="switchView('triage')">⚡ Live USB & Recovery</div>
+            <div class="nav-item" onclick="switchView('timeline')">💬 Unified Chat Timeline</div>
+            <div class="nav-item" onclick="switchView('geospatial')">📍 GPS &amp; Photo Heatmap</div>
+            <div class="nav-item" onclick="switchView('watchlists')">🚨 Keyword Alerts</div>
             <div class="nav-item" onclick="switchView('provenance')">🗺️ Process &amp; Provenance Map</div>
             <div class="nav-item" onclick="switchView('ingest')">📦 Dump Ingestion</div>
             <div class="nav-item" onclick="switchView('analysis')">⚡ Manual Correlation</div>
@@ -482,6 +536,189 @@
                 </div>
             </div>
 
+            <!-- 2.8 UNIFIED CHAT TIMELINE VIEW -->
+            <div id="view-timeline" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">💬 Unified Cross-Application Chat Timeline</div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="exportTimelineCSV()">💾 Export CSV</button>
+                            <button class="btn btn-secondary" onclick="loadUnifiedTimeline()">🔄 Refresh Feed</button>
+                        </div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Aggregates decrypted communications chronologically across Signal, WhatsApp, WeChat, and Safari history into an investigator chat stream.
+                    </p>
+
+                    <!-- Stats & App Breakdown -->
+                    <div class="stats-grid" style="grid-template-columns:repeat(5, 1fr);margin-bottom:18px;">
+                        <div class="stat-card">
+                            <div class="label">Total Events</div>
+                            <div class="value" id="stat-tl-total">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Signal 💬</div>
+                            <div class="value" id="stat-tl-signal" style="color:#60a5fa;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">WhatsApp 🟢</div>
+                            <div class="value" id="stat-tl-whatsapp" style="color:#34d399;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">WeChat 💬</div>
+                            <div class="value" id="stat-tl-wechat" style="color:#a78bfa;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Safari History 🌐</div>
+                            <div class="value" id="stat-tl-safari" style="color:#f59e0b;">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Filter Controls -->
+                    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+                        <input type="text" id="timeline-search" class="form-input" placeholder="🔍 Search messages, senders, URLs, or content..." oninput="filterTimelineEvents()">
+                        <select id="timeline-app-filter" class="form-input" onchange="filterTimelineEvents()">
+                            <option value="">All Applications</option>
+                            <option value="Signal">Signal Messenger 💬</option>
+                            <option value="WhatsApp">WhatsApp Messenger 🟢</option>
+                            <option value="WeChat">WeChat 💬</option>
+                            <option value="Safari">Safari Browsing History 🌐</option>
+                        </select>
+                        <select id="timeline-sort" class="form-input" onchange="sortTimelineEvents()">
+                            <option value="asc">Oldest First (Chronological)</option>
+                            <option value="desc">Newest First (Recent)</option>
+                        </select>
+                    </div>
+
+                    <!-- Chat Feed Stream -->
+                    <div id="timeline-feed" style="max-height:600px;overflow-y:auto;padding-right:8px;">
+                        <div style="padding:24px;text-align:center;color:var(--text-muted);">
+                            Loading unified messages and web events...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.85 GPS & PHOTO EXIF HEATMAP VIEW -->
+            <div id="view-geospatial" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📍 Geospatial Photo EXIF &amp; Movement Map</div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="exportGeoJSON()">💾 Export GeoJSON</button>
+                            <button class="btn btn-secondary" onclick="loadGeospatialData()">🔄 Rescan Media</button>
+                        </div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Extracts latitude, longitude, and timestamps embedded in camera photos and AFC media to map the suspect's movements and locations over time.
+                    </p>
+
+                    <!-- Stats Row -->
+                    <div class="stats-grid" style="grid-template-columns:repeat(4, 1fr);margin-bottom:18px;">
+                        <div class="stat-card">
+                            <div class="label">Geolocated Photos</div>
+                            <div class="value" id="stat-geo-total">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Camera Models</div>
+                            <div class="value" id="stat-geo-cameras" style="color:#60a5fa;">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Earliest Position</div>
+                            <div class="value" id="stat-geo-earliest" style="font-size:0.9rem;color:#34d399;">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Latest Position</div>
+                            <div class="value" id="stat-geo-latest" style="font-size:0.9rem;color:#f59e0b;">-</div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Map Container -->
+                    <div id="geospatial-map" style="margin-bottom:18px;"></div>
+
+                    <!-- Chronological Coordinates Table -->
+                    <div class="table-responsive">
+                        <table id="geospatial-table">
+                            <thead>
+                                <tr>
+                                    <th>Point #</th>
+                                    <th>Media File</th>
+                                    <th>Latitude</th>
+                                    <th>Longitude</th>
+                                    <th>Altitude</th>
+                                    <th>Capture Timestamp (UTC)</th>
+                                    <th>Camera Hardware</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No GPS coordinates loaded. Extract photos via AFC or ingest media dump.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.9 AUTOMATED KEYWORD ALERTS & WATCHLISTS VIEW -->
+            <div id="view-watchlists" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🚨 Automated Forensic Keyword &amp; Intelligence Alerts</div>
+                        <button class="btn btn-secondary" onclick="loadWatchlistAlerts()">🔄 Rescan Evidence</button>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Pre-configured pattern matching detecting cryptocurrency wallets, financial fraud / IBANs, narcotics trafficking, firearms, and exposed credentials.
+                    </p>
+
+                    <!-- Alert Severity Counters -->
+                    <div class="stats-grid" style="grid-template-columns:repeat(4, 1fr);margin-bottom:18px;">
+                        <div class="stat-card">
+                            <div class="label">Total Alerts</div>
+                            <div class="value" id="stat-alt-total">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Critical Alerts 🔴</div>
+                            <div class="value" id="stat-alt-crit" style="color:#ef4444;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">High Severity 🟠</div>
+                            <div class="value" id="stat-alt-high" style="color:#f59e0b;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Medium Severity 🟡</div>
+                            <div class="value" id="stat-alt-med" style="color:#3b82f6;">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Search / Watchlist Form -->
+                    <div style="background:rgba(15,23,42,0.6);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:18px;">
+                        <div style="font-weight:600;font-size:0.9rem;margin-bottom:8px;color:#f8fafc;">🎯 Add Custom Case Watchlist Terms</div>
+                        <div style="display:flex;gap:10px;">
+                            <input type="text" id="custom-watchlist-input" class="form-input" placeholder="Enter comma-separated target terms (e.g. suspect alias, phone number, bank code, covert phrase)">
+                            <button class="btn btn-primary" onclick="runCustomWatchlistScan()" style="white-space:nowrap;">⚡ Scan Custom Terms</button>
+                        </div>
+                    </div>
+
+                    <!-- Category Filter Tabs -->
+                    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="alert-category-pills">
+                        <button class="btn btn-primary btn-sm" onclick="filterAlertsByCategory('ALL')">All Alerts</button>
+                        <button class="btn btn-secondary btn-sm" onclick="filterAlertsByCategory('Crypto')">🪙 Crypto Wallets</button>
+                        <button class="btn btn-secondary btn-sm" onclick="filterAlertsByCategory('Financial')">💳 Financial / IBAN</button>
+                        <button class="btn btn-secondary btn-sm" onclick="filterAlertsByCategory('Narcotics')">💊 Narcotics</button>
+                        <button class="btn btn-secondary btn-sm" onclick="filterAlertsByCategory('Weapons')">🔫 Weapons</button>
+                        <button class="btn btn-secondary btn-sm" onclick="filterAlertsByCategory('Credentials')">🔑 Credentials</button>
+                        <button class="btn btn-secondary btn-sm" onclick="filterAlertsByCategory('Custom Watchlist')">🎯 Custom Terms</button>
+                    </div>
+
+                    <!-- Alert Cards Feed -->
+                    <div id="alerts-feed">
+                        <div style="padding:24px;text-align:center;color:var(--text-muted);">
+                            Scanning evidence databases for intelligence watchlists...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 3. FORENSIC DUMP INGESTION VIEW -->
             <div id="view-ingest" class="view-panel">
                 <div class="card">
@@ -667,6 +904,9 @@
                 overview: 'Overview Dashboard',
                 cases: 'Case Management',
                 triage: 'Live USB Triage & Password Recovery',
+                timeline: 'Unified Cross-Application Chat Timeline',
+                geospatial: 'Geospatial Photo EXIF &amp; Heatmap',
+                watchlists: 'Automated Forensic Keyword Alerts',
                 provenance: 'Forensic Process &amp; Provenance Map',
                 ingest: 'Forensic Dump Ingestion',
                 analysis: 'Manual Correlation & Decryption',
@@ -679,6 +919,9 @@
             if (viewName === 'overview') loadOverview();
             if (viewName === 'cases') loadCases();
             if (viewName === 'triage') loadTriage();
+            if (viewName === 'timeline') loadUnifiedTimeline();
+            if (viewName === 'geospatial') loadGeospatialData();
+            if (viewName === 'watchlists') loadWatchlistAlerts();
             if (viewName === 'provenance') loadDefaultProvenance();
             if (viewName === 'explorer') loadExplorerDatabases();
             if (viewName === 'pairing') loadPairing();
@@ -1310,6 +1553,345 @@
             link.href = URL.createObjectURL(blob);
             link.download = `Forensic_Provenance_Process_Map.json`;
             link.click();
+        }
+
+        /* ── Unified Chat Timeline JavaScript ────────────────────────────── */
+        let allTimelineEvents = [];
+
+        async function loadUnifiedTimeline() {
+            const feed = document.getElementById('timeline-feed');
+            feed.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Aggregating cross-application communications...</div>';
+            try {
+                const res = await fetch('/api/timeline');
+                const data = await res.json();
+                allTimelineEvents = data.events || [];
+
+                document.getElementById('stat-tl-total').textContent = data.total_events;
+                const b = data.app_breakdown || {};
+                document.getElementById('stat-tl-signal').textContent = b['Signal'] || 0;
+                document.getElementById('stat-tl-whatsapp').textContent = b['WhatsApp'] || 0;
+                document.getElementById('stat-tl-wechat').textContent = b['WeChat'] || 0;
+                document.getElementById('stat-tl-safari').textContent = b['Safari'] || 0;
+
+                renderTimelineEvents(allTimelineEvents);
+            } catch (err) {
+                feed.innerHTML = `<div style="color:var(--danger);padding:18px;">Failed to load timeline: ${err}</div>`;
+            }
+        }
+
+        function renderTimelineEvents(events) {
+            const feed = document.getElementById('timeline-feed');
+            feed.innerHTML = '';
+            if (!events.length) {
+                feed.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No messages or web visits found in decrypted databases. Run decryption first.</div>';
+                return;
+            }
+
+            events.forEach(ev => {
+                const bubble = document.createElement('div');
+                bubble.className = 'chat-bubble';
+
+                const appColors = {
+                    'Signal': '#3b82f6',
+                    'WhatsApp': '#10b981',
+                    'WeChat': '#8b5cf6',
+                    'Safari': '#f59e0b'
+                };
+                const color = appColors[ev.app] || '#64748b';
+
+                bubble.innerHTML = `
+                    <div class="chat-meta">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="background:${color}22;color:${color};border:1px solid ${color}44;padding:2px 8px;border-radius:4px;font-weight:700;font-size:0.75rem;">
+                                ${ev.app_icon} ${ev.app}
+                            </span>
+                            <strong style="color:#f8fafc;">${ev.sender}</strong>
+                            <span style="color:var(--text-muted);">➔ ${ev.recipient}</span>
+                        </div>
+                        <div style="font-family:monospace;font-size:0.8rem;color:#94a3b8;">${ev.timestamp_utc}</div>
+                    </div>
+                    <div class="chat-text">${ev.content}</div>
+                    <div style="margin-top:6px;font-size:0.75rem;color:var(--text-muted);">
+                        Source: <code>${ev.source_database}</code> » <code>${ev.source_table}</code>
+                    </div>
+                `;
+                feed.appendChild(bubble);
+            });
+        }
+
+        function filterTimelineEvents() {
+            const query = (document.getElementById('timeline-search').value || '').toLowerCase().trim();
+            const app = document.getElementById('timeline-app-filter').value;
+
+            let filtered = allTimelineEvents;
+            if (app) {
+                filtered = filtered.filter(e => e.app === app);
+            }
+            if (query) {
+                filtered = filtered.filter(e => {
+                    return (e.content && e.content.toLowerCase().includes(query)) ||
+                           (e.sender && e.sender.toLowerCase().includes(query)) ||
+                           (e.recipient && e.recipient.toLowerCase().includes(query));
+                });
+            }
+            renderTimelineEvents(filtered);
+        }
+
+        function sortTimelineEvents() {
+            const order = document.getElementById('timeline-sort').value;
+            allTimelineEvents.sort((a, b) => {
+                return order === 'asc' ? (a.timestamp_epoch - b.timestamp_epoch) : (b.timestamp_epoch - a.timestamp_epoch);
+            });
+            filterTimelineEvents();
+        }
+
+        function exportTimelineCSV() {
+            if (!allTimelineEvents.length) {
+                alert('No timeline records to export.');
+                return;
+            }
+            let csv = '"Timestamp (UTC)","App","Sender","Recipient","Content","Source Database","Source Table"\n';
+            allTimelineEvents.forEach(e => {
+                const cleanContent = (e.content || '').replace(/"/g, '""');
+                csv += `"${e.timestamp_utc}","${e.app}","${e.sender}","${e.recipient}","${cleanContent}","${e.source_database}","${e.source_table}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'Unified_Forensic_Timeline.csv';
+            link.click();
+        }
+
+        /* ── GPS & Photo EXIF Geospatial JavaScript ──────────────────────── */
+        let geoMap = null;
+        let geoMarkers = [];
+        let allGeoPoints = [];
+
+        async function loadGeospatialData() {
+            const tableBody = document.querySelector('#geospatial-table tbody');
+            tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Scanning media files for EXIF GPS metadata...</td></tr>';
+            try {
+                const res = await fetch('/api/geospatial');
+                const data = await res.json();
+                allGeoPoints = data.points || [];
+
+                document.getElementById('stat-geo-total').textContent = data.total_points;
+                const cameras = [...new Set(allGeoPoints.map(p => p.camera_model))].filter(Boolean);
+                document.getElementById('stat-geo-cameras').textContent = cameras.length ? cameras.join(', ') : 'None';
+
+                if (allGeoPoints.length) {
+                    document.getElementById('stat-geo-earliest').textContent = allGeoPoints[0].timestamp_utc.substring(0, 10);
+                    document.getElementById('stat-geo-latest').textContent = allGeoPoints[allGeoPoints.length - 1].timestamp_utc.substring(0, 10);
+                }
+
+                renderGeospatialTable(allGeoPoints);
+                initGeospatialMap(allGeoPoints, data.center);
+            } catch (err) {
+                tableBody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);">Error loading GPS points: ${err}</td></tr>`;
+            }
+        }
+
+        function renderGeospatialTable(points) {
+            const tableBody = document.querySelector('#geospatial-table tbody');
+            tableBody.innerHTML = '';
+            if (!points.length) {
+                tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No GPS coordinates found in scanned media.</td></tr>';
+                return;
+            }
+
+            points.forEach((p, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>#${idx + 1}</strong></td>
+                    <td><code>${p.file_name}</code></td>
+                    <td style="color:#60a5fa;font-family:monospace;">${p.latitude.toFixed(6)}</td>
+                    <td style="color:#60a5fa;font-family:monospace;">${p.longitude.toFixed(6)}</td>
+                    <td>${p.altitude_meters ? p.altitude_meters + ' m' : 'N/A'}</td>
+                    <td style="font-size:0.8rem;color:var(--text-muted);">${p.timestamp_utc}</td>
+                    <td>${p.camera_make} ${p.camera_model}</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm" onclick="focusGeoPoint(${p.latitude}, ${p.longitude})">📍 Focus</button>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function initGeospatialMap(points, center) {
+            if (typeof L === 'undefined') return;
+
+            const mapDiv = document.getElementById('geospatial-map');
+            if (!mapDiv) return;
+
+            if (!geoMap) {
+                geoMap = L.map('geospatial-map').setView([center.latitude || 37.7749, center.longitude || -122.4194], 12);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap forensic overlay'
+                }).addTo(geoMap);
+            }
+
+            // Clear old markers
+            geoMarkers.forEach(m => geoMap.removeLayer(m));
+            geoMarkers = [];
+
+            if (points.length) {
+                const latlngs = [];
+                points.forEach((p, idx) => {
+                    const marker = L.marker([p.latitude, p.longitude]).addTo(geoMap);
+                    marker.bindPopup(`
+                        <div style="color:#111827;font-size:0.85rem;">
+                            <strong>Point #${idx + 1}</strong><br>
+                            <strong>File:</strong> ${p.file_name}<br>
+                            <strong>Captured:</strong> ${p.timestamp_utc}<br>
+                            <strong>GPS:</strong> ${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}<br>
+                            <strong>Camera:</strong> ${p.camera_make} ${p.camera_model}
+                        </div>
+                    `);
+                    geoMarkers.push(marker);
+                    latlngs.push([p.latitude, p.longitude]);
+                });
+
+                if (latlngs.length > 1) {
+                    const polyline = L.polyline(latlngs, {color: '#ef4444', weight: 3, dashArray: '5, 10'}).addTo(geoMap);
+                    geoMarkers.push(polyline);
+                }
+
+                geoMap.fitBounds(L.latLngBounds(latlngs), {padding: [40, 40]});
+            }
+        }
+
+        function focusGeoPoint(lat, lon) {
+            if (geoMap) {
+                geoMap.setView([lat, lon], 16);
+            }
+        }
+
+        function exportGeoJSON() {
+            if (!allGeoPoints.length) {
+                alert('No GPS points to export.');
+                return;
+            }
+            const geojson = {
+                type: "FeatureCollection",
+                features: allGeoPoints.map(p => ({
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [p.longitude, p.latitude]
+                    },
+                    properties: {
+                        file_name: p.file_name,
+                        timestamp_utc: p.timestamp_utc,
+                        camera: `${p.camera_make} ${p.camera_model}`
+                    }
+                }))
+            };
+            const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'Forensic_Photo_Geospatial.geojson';
+            link.click();
+        }
+
+        /* ── Automated Watchlists & Keyword Alerts JavaScript ─────────────── */
+        let allWatchlistAlerts = [];
+
+        async function loadWatchlistAlerts() {
+            const feed = document.getElementById('alerts-feed');
+            feed.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Scanning decrypted databases against intelligence watchlists...</div>';
+            try {
+                const res = await fetch('/api/watchlists/alerts');
+                const data = await res.json();
+                allWatchlistAlerts = data.alerts || [];
+
+                document.getElementById('stat-alt-total').textContent = data.total_alerts;
+                const s = data.severity_summary || {};
+                document.getElementById('stat-alt-crit').textContent = s['CRITICAL'] || 0;
+                document.getElementById('stat-alt-high').textContent = s['HIGH'] || 0;
+                document.getElementById('stat-alt-med').textContent = s['MEDIUM'] || 0;
+
+                renderAlerts(allWatchlistAlerts);
+            } catch (err) {
+                feed.innerHTML = `<div style="color:var(--danger);padding:18px;">Failed to scan watchlists: ${err}</div>`;
+            }
+        }
+
+        function renderAlerts(alerts) {
+            const feed = document.getElementById('alerts-feed');
+            feed.innerHTML = '';
+            if (!alerts.length) {
+                feed.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No watchlist keywords or pattern alerts detected in current evidence.</div>';
+                return;
+            }
+
+            alerts.forEach(a => {
+                const card = document.createElement('div');
+                const sevClass = (a.severity || 'medium').toLowerCase();
+                card.className = `alert-card ${sevClass}`;
+
+                const badgeBg = a.severity === 'CRITICAL' ? '#ef4444' : (a.severity === 'HIGH' ? '#f59e0b' : '#3b82f6');
+
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="background:${badgeBg};color:#ffffff;font-size:0.75rem;font-weight:700;padding:2px 8px;border-radius:4px;">
+                                ${a.severity}
+                            </span>
+                            <strong style="color:#f8fafc;font-size:0.95rem;">${a.category}</strong>
+                            <span style="color:var(--text-muted);font-size:0.85rem;">— ${a.matched_term}</span>
+                        </div>
+                        <span style="font-size:0.75rem;color:var(--text-muted);">Alert ID: ${a.alert_id}</span>
+                    </div>
+                    <div style="background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.06);padding:10px;border-radius:6px;font-family:monospace;font-size:0.88rem;color:#e2e8f0;margin-bottom:8px;">
+                        ${a.context_snippet}
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">
+                        Located in: <strong>${a.database_name}</strong> » Table: <strong>${a.table_name}</strong> » Column: <strong>${a.column_name}</strong>
+                    </div>
+                `;
+                feed.appendChild(card);
+            });
+        }
+
+        function filterAlertsByCategory(cat) {
+            if (cat === 'ALL') {
+                renderAlerts(allWatchlistAlerts);
+            } else {
+                const filtered = allWatchlistAlerts.filter(a => a.category.toLowerCase().includes(cat.toLowerCase()));
+                renderAlerts(filtered);
+            }
+        }
+
+        async function runCustomWatchlistScan() {
+            const raw = document.getElementById('custom-watchlist-input').value.trim();
+            if (!raw) {
+                alert('Please enter at least one custom search term.');
+                return;
+            }
+            const terms = raw.split(',').map(t => t.trim()).filter(Boolean);
+            const feed = document.getElementById('alerts-feed');
+            feed.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Running deep scan with custom watch terms...</div>';
+
+            try {
+                const res = await fetch('/api/watchlists/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({custom_keywords: terms})
+                });
+                const data = await res.json();
+                allWatchlistAlerts = data.alerts || [];
+
+                document.getElementById('stat-alt-total').textContent = data.total_alerts;
+                const s = data.severity_summary || {};
+                document.getElementById('stat-alt-crit').textContent = s['CRITICAL'] || 0;
+                document.getElementById('stat-alt-high').textContent = s['HIGH'] || 0;
+                document.getElementById('stat-alt-med').textContent = s['MEDIUM'] || 0;
+
+                renderAlerts(allWatchlistAlerts);
+            } catch (err) {
+                feed.innerHTML = `<div style="color:var(--danger);padding:18px;">Custom scan failed: ${err}</div>`;
+            }
         }
 
         // Initialize on load

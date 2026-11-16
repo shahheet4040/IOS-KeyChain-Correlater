@@ -8,16 +8,21 @@ from correlator.web.app import (
     detect_dump,
     download_case_pdf,
     get_case_provenance,
+    get_geospatial,
     get_pairing_records,
     get_system_overview,
+    get_timeline,
+    get_watchlist_alerts,
     list_cases,
     serve_dashboard,
     triage_device,
+    trigger_watchlist_scan,
 )
 from correlator.web.schemas import (
     CaseCreateRequest,
     CrackBackupRequest,
     DeviceTriageRequest,
+    WatchlistScanRequest,
 )
 
 
@@ -114,5 +119,37 @@ def test_case_provenance_endpoint():
     assert prov["case_id"] == cid
     assert "provenance_map" in prov
     assert isinstance(prov["provenance_map"], list)
+
+
+def test_timeline_endpoint():
+    res = get_timeline(max_records=100)
+    assert "total_events" in res
+    assert "app_breakdown" in res
+    assert "events" in res
+    assert isinstance(res["events"], list)
+
+
+def test_geospatial_endpoint():
+    res = get_geospatial()
+    assert "total_points" in res
+    assert "center" in res
+    assert "points" in res
+    assert isinstance(res["points"], list)
+
+
+def test_watchlist_endpoints():
+    alerts_res = get_watchlist_alerts()
+    assert "total_alerts" in alerts_res
+    assert "severity_summary" in alerts_res
+    assert "category_summary" in alerts_res
+    assert isinstance(alerts_res["alerts"], list)
+
+    scan_req = WatchlistScanRequest(custom_keywords=["test_target", "operation_alpha"])
+    scan_res = trigger_watchlist_scan(scan_req)
+    assert "total_alerts" in scan_res
+    assert "severity_summary" in scan_res
+    assert "category_summary" in scan_res
+    assert isinstance(scan_res["alerts"], list)
+
 
 

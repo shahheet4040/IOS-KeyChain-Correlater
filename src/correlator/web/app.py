@@ -15,20 +15,26 @@ from fastapi.staticfiles import StaticFiles
 
 from correlator.case_manager import CaseManager
 from correlator.dump_ingest import detect_dump_format, ingest_and_analyze, normalize_dump_to_extraction
+from correlator.geospatial import GeoPoint, scan_media_for_gps
 from correlator.pairing import find_pairing_records, match_device_to_pairing
 from correlator.pdf_report import generate_case_pdf
 from correlator.pipeline import execute_pipeline
 from correlator.search_engine import export_search_results, generate_search_report_html, search_sqlite_files
+from correlator.timeline import TimelineEvent, extract_unified_timeline
+from correlator.watchlists import WatchlistAlert, scan_evidence_for_alerts
 from correlator.web.schemas import (
     AfcPullRequest,
     CaseCreateRequest,
     CrackBackupRequest,
     DeviceAddRequest,
     DeviceTriageRequest,
+    GeospatialRequest,
     IngestDumpRequest,
     PairingDeviceCheck,
     RunAnalysisRequest,
     SearchRequest,
+    TimelineRequest,
+    WatchlistScanRequest,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -573,6 +579,147 @@ def get_table_rows(db_path: str, table: str, limit: int = 500, offset: int = 0):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to query table: {e}")
+
+
+# ── Unified Chat & Activity Timeline Routes ──────────────────────────
+
+@app.get("/api/timeline")
+def get_timeline(directory: Optional[str] = None, max_records: int = 5000):
+    """Aggregates chronological communications across Signal, WhatsApp, WeChat, and Safari."""
+    search_dirs = []
+    if directory and Path(directory).is_dir():
+        search_dirs.append(Path(directory).resolve())
+    else:
+        for sub in [
+            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "fake" / "decrypted_export",
+            BASE_DIR / "out" / "fake" / "extraction",
+        ]:
+            if sub.is_dir() and sub not in search_dirs:
+                search_dirs.append(sub)
+
+    events = []
+    for s_dir in search_dirs:
+        events.extend(extract_unified_timeline(s_dir, max_records=max_records))
+        if len(events) >= max_records:
+            break
+
+    events.sort(key=lambda x: x.timestamp_epoch)
+    events = events[:max_records]
+
+    app_breakdown = {}
+    for ev in events:
+        app_breakdown[ev.app] = app_breakdown.get(ev.app, 0) + 1
+
+    return {
+        "total_events": len(events),
+        "app_breakdown": app_breakdown,
+        "events": [ev.to_dict() for ev in events],
+    }
+
+
+# ── GPS & Photo EXIF Geospatial Routes ────────────────────────────────
+
+@app.get("/api/geospatial")
+def get_geospatial(directory: Optional[str] = None):
+    """Extracts GPS coordinates and timestamps from seized media and AFC photos."""
+    search_dirs = []
+    if directory and Path(directory).is_dir():
+        search_dirs.append(Path(directory).resolve())
+    else:
+        for sub in [
+            BASE_DIR / "out" / "afc_extracted",
+            BASE_DIR / "out" / "afc_photos",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "real_world_case",
+        ]:
+            if sub.is_dir() and sub not in search_dirs:
+                search_dirs.append(sub)
+
+    points = []
+    for s_dir in search_dirs:
+        points.extend(scan_media_for_gps(s_dir))
+
+    points.sort(key=lambda x: x.timestamp_epoch)
+
+    center = {"latitude": 37.7749, "longitude": -122.4194}
+    if points:
+        center = {
+            "latitude": sum(p.latitude for p in points) / len(points),
+            "longitude": sum(p.longitude for p in points) / len(points),
+        }
+
+    return {
+        "total_points": len(points),
+        "center": center,
+        "points": [p.to_dict() for p in points],
+    }
+
+
+# ── Automated Watchlist & Keyword Alert Routes ────────────────────────
+
+@app.get("/api/watchlists/alerts")
+def get_watchlist_alerts(directory: Optional[str] = None):
+    """Scans decrypted databases against intelligence watchlists."""
+    search_dirs = []
+    if directory and Path(directory).is_dir():
+        search_dirs.append(Path(directory).resolve())
+    else:
+        for sub in [
+            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "fake" / "decrypted_export",
+        ]:
+            if sub.is_dir() and sub not in search_dirs:
+                search_dirs.append(sub)
+
+    alerts = []
+    for s_dir in search_dirs:
+        alerts.extend(scan_evidence_for_alerts(s_dir))
+
+    category_counts = {}
+    severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0}
+    for a in alerts:
+        category_counts[a.category] = category_counts.get(a.category, 0) + 1
+        severity_counts[a.severity] = severity_counts.get(a.severity, 0) + 1
+
+    return {
+        "total_alerts": len(alerts),
+        "severity_summary": severity_counts,
+        "category_summary": category_counts,
+        "alerts": [a.to_dict() for a in alerts],
+    }
+
+
+@app.post("/api/watchlists/scan")
+def trigger_watchlist_scan(payload: WatchlistScanRequest):
+    search_dir = Path(payload.directory).resolve() if payload.directory else None
+    if search_dir and not search_dir.is_dir():
+        raise HTTPException(status_code=400, detail="Target search directory does not exist.")
+
+    dir_to_scan = search_dir or (BASE_DIR / "out" / "analysis_results" / "decrypted_exports")
+    if not dir_to_scan.is_dir():
+        dir_to_scan = BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite"
+
+    alerts = scan_evidence_for_alerts(dir_to_scan, custom_keywords=payload.custom_keywords)
+
+    category_counts = {}
+    severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0}
+    for a in alerts:
+        category_counts[a.category] = category_counts.get(a.category, 0) + 1
+        severity_counts[a.severity] = severity_counts.get(a.severity, 0) + 1
+
+    return {
+        "total_alerts": len(alerts),
+        "severity_summary": severity_counts,
+        "category_summary": category_counts,
+        "alerts": [a.to_dict() for a in alerts],
+    }
 
 
 # ── Pairing Record Routes ────────────────────────────────────────────
