@@ -24,8 +24,9 @@ def ensure_fake_fixtures():
     fake_dir = _root / "out" / "fake"
     keychain_file = fake_dir / "keychain.json"
     ground_truth = fake_dir / "ground_truth.json"
+    report_file = fake_dir / "report.json"
 
-    if not keychain_file.is_file() or not ground_truth.is_file():
+    if not keychain_file.is_file() or not ground_truth.is_file() or not report_file.is_file():
         try:
             from make_fake_extraction import generate_fake_extraction
             generate_fake_extraction(fake_dir)

@@ -181,6 +181,8 @@ def generate_fake_extraction(out_dir: Path | str):
     execute_pipeline(
         extraction=extraction_dir,
         keychain=out_dir / "keychain.json",
+        report=out_dir / "report.json",
+        html_report=out_dir / "report.html",
         out_dir=out_dir,
         export_dir=out_dir / "decrypted_export",
     )
