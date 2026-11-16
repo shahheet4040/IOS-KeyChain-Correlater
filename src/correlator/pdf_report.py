@@ -257,6 +257,31 @@ def generate_case_pdf(case_data: Dict[str, Any], output_path: str | Path) -> Pat
     builder.add_key_value("Baseline Hash Check", "VERIFIED (0 Evidence Files Altered)")
     builder.add_key_value("Integrity Certifier", f"Digitally compiled for {examiner}")
 
+    # Section 7: Step-by-Step Forensic Execution & Provenance Audit Trail
+    provenance_steps = case_data.get("provenance_map", [])
+    if not provenance_steps and databases:
+        from correlator.provenance import build_default_provenance_map
+        tracker = build_default_provenance_map(
+            results=databases,
+            extraction_path="Evidence_Acquisition",
+            keychain_path="Keychain_Store",
+        )
+        provenance_steps = tracker.get_timeline()
+
+    if provenance_steps:
+        builder.add_section_header("7. Step-by-Step Forensic Execution & Provenance Map")
+        prov_headers = ["Step", "Phase", "Target", "Forensic Action & Outcome", "Status"]
+        prov_rows = []
+        for s in provenance_steps:
+            prov_rows.append([
+                f"#{s.get('step_number', 1)}",
+                str(s.get("phase", "Pipeline")),
+                str(s.get("target", "-"))[:16],
+                str(s.get("action", ""))[:58],
+                str(s.get("status", "SUCCESS")).upper(),
+            ])
+        builder.add_table(prov_headers, prov_rows, [35, 125, 90, 230, 60])
+
     pdf_bytes = builder.build_pdf_bytes()
     with open(out_p, "wb") as f:
         f.write(pdf_bytes)

@@ -156,6 +156,14 @@ def download_case_pdf(case_id: str):
             pass
         case_data["evidence_samples"] = samples
 
+        # Collect provenance steps from analysis runs
+        prov_steps = []
+        for r in all_res:
+            r_data = r.get("data", {})
+            if "provenance_map" in r_data:
+                prov_steps.extend(r_data["provenance_map"])
+        case_data["provenance_map"] = prov_steps
+
         pdf_dir = CASES_DIR / case_id / "reports"
         pdf_dir.mkdir(parents=True, exist_ok=True)
         safe_num = case_data.get("case_number", "Case").replace("/", "_").replace("\\", "_")
@@ -171,6 +179,37 @@ def download_case_pdf(case_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation error: {e}")
+
+
+@app.get("/api/cases/{case_id}/provenance")
+def get_case_provenance(case_id: str):
+    """Returns the step-by-step forensic execution and provenance map for a case."""
+    try:
+        case_data = case_manager.get_case(case_id)
+        all_res = case_manager.get_analysis_results(case_id)
+        steps = []
+        for r in all_res:
+            r_data = r.get("data", {})
+            if "provenance_map" in r_data:
+                steps.extend(r_data["provenance_map"])
+        if not steps:
+            from correlator.provenance import build_default_provenance_map
+            dbs = []
+            for r in all_res:
+                r_data = r.get("data", {})
+                dbs.extend(r_data.get("databases", []))
+            tracker = build_default_provenance_map(dbs, f"Case_{case_id}", "Keychain")
+            steps = tracker.get_timeline()
+        return {
+            "case_id": case_id,
+            "case_name": case_data.get("case_name"),
+            "total_steps": len(steps),
+            "provenance_map": steps,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Live USB Acquisition & Triage Routes ─────────────────────────────
@@ -338,6 +377,7 @@ def execute_dump_ingestion(payload: IngestDumpRequest):
     try:
         if payload.auto_analyze:
             result = ingest_and_analyze(dump_path, out_dir)
+            prov = result.get("pipeline_result", {}).get("provenance_map", [])
             return {
                 "success": True,
                 "format": result["format"],
@@ -347,6 +387,7 @@ def execute_dump_ingestion(payload: IngestDumpRequest):
                 "locked_count": result.get("locked_count", 0),
                 "report_html": str(result.get("report_html")),
                 "report_json": str(result.get("report_json")),
+                "provenance_map": prov,
             }
         else:
             result = normalize_dump_to_extraction(dump_path, out_dir)
@@ -393,6 +434,7 @@ def run_analysis(payload: RunAnalysisRequest):
             "locked_count": res["locked_count"],
             "report_html_path": str(res["report_html_path"]),
             "export_dir": str(export_dir),
+            "provenance_map": res.get("provenance_map", []),
             "databases": [
                 {
                     "name": r.name,

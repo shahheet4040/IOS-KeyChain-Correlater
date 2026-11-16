@@ -7,6 +7,7 @@ from correlator.web.app import (
     create_case,
     detect_dump,
     download_case_pdf,
+    get_case_provenance,
     get_pairing_records,
     get_system_overview,
     list_cases,
@@ -97,4 +98,21 @@ def test_detect_dump_endpoint(tmp_path: Path):
 def test_serve_dashboard():
     res = serve_dashboard()
     assert res is not None
+
+
+def test_case_provenance_endpoint():
+    req = CaseCreateRequest(
+        case_name="Provenance Case",
+        case_number="FSL-PROV-99",
+        examiner="Chief Officer",
+        description="Testing step-by-step mapping",
+    )
+    case_res = create_case(req)
+    cid = case_res["case_id"]
+
+    prov = get_case_provenance(cid)
+    assert prov["case_id"] == cid
+    assert "provenance_map" in prov
+    assert isinstance(prov["provenance_map"], list)
+
 

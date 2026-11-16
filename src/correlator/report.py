@@ -63,6 +63,7 @@ def generate_json_report(
     extraction_path: str | Path,
     keychain_path: str | Path,
     out_file: Optional[str | Path] = None,
+    provenance: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Builds a comprehensive structured JSON report enriched with WAL analysis and metadata.
@@ -92,6 +93,7 @@ def generate_json_report(
             "locked_count": locked_count,
         },
         "databases": db_entries,
+        "provenance_map": provenance or [],
     }
 
     if out_file:
@@ -109,6 +111,7 @@ def generate_html_report(
     keychain_path: str | Path,
     out_file: Optional[str | Path] = None,
     export_dir: Optional[str | Path] = None,
+    provenance: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     Generates a standalone, self-contained forensic HTML report with embedded CSS.
@@ -119,6 +122,27 @@ def generate_html_report(
     plain_count = sum(1 for r in results if r.status == "plain")
     locked_count = sum(1 for r in results if r.status == "not_decrypted")
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # If provenance is not explicitly passed, construct default from results
+    if not provenance:
+        from correlator.provenance import build_default_provenance_map
+        tracker = build_default_provenance_map(results, extraction_path, keychain_path, export_dir=export_dir)
+        provenance = tracker.get_timeline()
+
+    provenance_rows = []
+    for s in provenance:
+        status_badge = '<span class="badge badge-decrypted">SUCCESS</span>' if s.get("status") == "success" else '<span class="badge badge-locked">WARNING</span>'
+        provenance_rows.append(f"""
+            <tr>
+                <td><strong>#{s.get('step_number')}</strong></td>
+                <td><span style="color:#58a6ff;font-weight:600;">{html.escape(str(s.get('phase')))}</span></td>
+                <td><code>{html.escape(str(s.get('target', '-')))}</code></td>
+                <td>{html.escape(str(s.get('action')))}</td>
+                <td style="font-size:0.85em;color:#8b949e;">{s.get('timestamp')}</td>
+                <td>{status_badge}</td>
+            </tr>
+        """)
+    prov_tbody = "\\n".join(provenance_rows)
 
     # Load evidence data from exported databases
     evidence_list = _read_sqlite_evidence(Path(export_dir) if export_dir else None)
@@ -323,6 +347,64 @@ def generate_html_report(
                 </thead>
                 <tbody>
                     {rows_joined}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════
+             FORENSIC PROVENANCE & STEP-BY-STEP PROCESS MAP
+             ═══════════════════════════════════════════════════════ -->
+        <div style="margin-top:40px;">
+            <h2 style="color:#ffffff;border-bottom:1px solid #30363d;padding-bottom:8px;">
+                🗺️ Forensic Execution &amp; Provenance Process Map
+            </h2>
+            <p style="color:#8b949e;font-size:0.9em;margin-bottom:16px;">
+                Sequential chain-of-custody audit trail showing every automated step executed from initial acquisition to key derivation, cryptographic profile matching, and evidence export.
+            </p>
+            <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:16px;">
+                <div style="background:#161b22;border:1px solid #30363d;padding:8px 12px;border-radius:6px;min-width:130px;text-align:center;">
+                    <div style="font-size:0.75em;color:#8b949e;">Phase 1</div>
+                    <div style="font-weight:600;font-size:0.85em;color:#58a6ff;">Triage &amp; Discovery</div>
+                </div>
+                <div style="display:flex;align-items:center;color:#8b949e;">➔</div>
+                <div style="background:#161b22;border:1px solid #30363d;padding:8px 12px;border-radius:6px;min-width:130px;text-align:center;">
+                    <div style="font-size:0.75em;color:#8b949e;">Phase 2</div>
+                    <div style="font-weight:600;font-size:0.85em;color:#58a6ff;">SHA-256 Baseline</div>
+                </div>
+                <div style="display:flex;align-items:center;color:#8b949e;">➔</div>
+                <div style="background:#161b22;border:1px solid #30363d;padding:8px 12px;border-radius:6px;min-width:130px;text-align:center;">
+                    <div style="font-size:0.75em;color:#8b949e;">Phase 3</div>
+                    <div style="font-weight:600;font-size:0.85em;color:#58a6ff;">Keychain Ingestion</div>
+                </div>
+                <div style="display:flex;align-items:center;color:#8b949e;">➔</div>
+                <div style="background:#161b22;border:1px solid #30363d;padding:8px 12px;border-radius:6px;min-width:130px;text-align:center;">
+                    <div style="font-size:0.75em;color:#8b949e;">Phase 4</div>
+                    <div style="font-weight:600;font-size:0.85em;color:#3fb950;">Cryptographic Match</div>
+                </div>
+                <div style="display:flex;align-items:center;color:#8b949e;">➔</div>
+                <div style="background:#161b22;border:1px solid #30363d;padding:8px 12px;border-radius:6px;min-width:130px;text-align:center;">
+                    <div style="font-size:0.75em;color:#8b949e;">Phase 5</div>
+                    <div style="font-weight:600;font-size:0.85em;color:#3fb950;">WAL Merge &amp; Decrypt</div>
+                </div>
+                <div style="display:flex;align-items:center;color:#8b949e;">➔</div>
+                <div style="background:#161b22;border:1px solid #30363d;padding:8px 12px;border-radius:6px;min-width:130px;text-align:center;">
+                    <div style="font-size:0.75em;color:#8b949e;">Phase 6</div>
+                    <div style="font-weight:600;font-size:0.85em;color:#a371f7;">Evidence Verified</div>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:50px;">Step</th>
+                        <th style="width:160px;">Phase</th>
+                        <th style="width:140px;">Target Object</th>
+                        <th>Forensic Action &amp; Parameters</th>
+                        <th style="width:140px;">Timestamp</th>
+                        <th style="width:80px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {prov_tbody}
                 </tbody>
             </table>
         </div>

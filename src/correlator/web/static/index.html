@@ -242,6 +242,7 @@
             <div class="nav-item active" onclick="switchView('overview')">📊 Overview Dashboard</div>
             <div class="nav-item" onclick="switchView('cases')">📁 Case Management</div>
             <div class="nav-item" onclick="switchView('triage')">⚡ Live USB & Recovery</div>
+            <div class="nav-item" onclick="switchView('provenance')">🗺️ Process &amp; Provenance Map</div>
             <div class="nav-item" onclick="switchView('ingest')">📦 Dump Ingestion</div>
             <div class="nav-item" onclick="switchView('analysis')">⚡ Manual Correlation</div>
             <div class="nav-item" onclick="switchView('explorer')">🔓 Browse Decrypted Data</div>
@@ -403,6 +404,80 @@
                         </div>
                         <button class="btn btn-secondary" id="btn-crack-backup" onclick="runCrackBackup()">🔓 Attack Backup Password</button>
                         <div id="crack-result" style="margin-top:12px;display:none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.75 FORENSIC PROCESS MAP & PROVENANCE VIEW -->
+            <div id="view-provenance" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🗺️ Forensic Execution &amp; Provenance Process Map</div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="exportProvenanceJSON()">💾 Export JSON</button>
+                            <button class="btn btn-secondary" onclick="loadDefaultProvenance()">🔄 Reload Recent Map</button>
+                        </div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:20px;">
+                        Interactive chronological provenance graph mapping every step executed from initial acquisition to key derivation, cryptographic profile matching, and evidence export.
+                    </p>
+
+                    <!-- Flowchart Process Bar -->
+                    <div style="display:grid;grid-template-columns:repeat(6, 1fr);gap:12px;margin-bottom:24px;">
+                        <div style="background:rgba(30,41,59,0.7);border:1px solid rgba(59,130,246,0.3);padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Phase 1</div>
+                            <div style="font-weight:700;font-size:0.9rem;color:#60a5fa;margin-top:4px;">Triage &amp; Hardware</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">Lockdown / usbmuxd</div>
+                        </div>
+                        <div style="background:rgba(30,41,59,0.7);border:1px solid rgba(59,130,246,0.3);padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Phase 2</div>
+                            <div style="font-weight:700;font-size:0.9rem;color:#60a5fa;margin-top:4px;">SHA-256 Baseline</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">Read-Only Sandboxing</div>
+                        </div>
+                        <div style="background:rgba(30,41,59,0.7);border:1px solid rgba(59,130,246,0.3);padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Phase 3</div>
+                            <div style="font-weight:700;font-size:0.9rem;color:#60a5fa;margin-top:4px;">Keychain Keys</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">Normalization &amp; Unpack</div>
+                        </div>
+                        <div style="background:rgba(30,41,59,0.7);border:1px solid rgba(16,185,129,0.3);padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Phase 4</div>
+                            <div style="font-weight:700;font-size:0.9rem;color:#34d399;margin-top:4px;">Profile Match</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">SQLCipher / WCDB</div>
+                        </div>
+                        <div style="background:rgba(30,41,59,0.7);border:1px solid rgba(16,185,129,0.3);padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Phase 5</div>
+                            <div style="font-weight:700;font-size:0.9rem;color:#34d399;margin-top:4px;">WAL Checkpoint</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">Clean Decryption</div>
+                        </div>
+                        <div style="background:rgba(30,41,59,0.7);border:1px solid rgba(168,85,247,0.3);padding:12px;border-radius:8px;text-align:center;">
+                            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Phase 6</div>
+                            <div style="font-weight:700;font-size:0.9rem;color:#c084fc;margin-top:4px;">Integrity Audit</div>
+                            <div style="font-size:0.75rem;color:#94a3b8;margin-top:2px;">0 Bytes Altered</div>
+                        </div>
+                    </div>
+
+                    <!-- Filter & Search Bar -->
+                    <div style="display:flex;gap:12px;margin-bottom:16px;">
+                        <input type="text" id="provenance-search" class="form-input" placeholder="🔍 Filter steps by action, target, or phase..." oninput="filterProvenanceSteps()">
+                    </div>
+
+                    <!-- Steps Timeline Table -->
+                    <div class="table-responsive">
+                        <table id="provenance-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:65px;">Step #</th>
+                                    <th style="width:190px;">Forensic Phase</th>
+                                    <th style="width:160px;">Target Object</th>
+                                    <th>Action &amp; Cryptographic Parameters</th>
+                                    <th style="width:170px;">Timestamp (UTC)</th>
+                                    <th style="width:90px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Run an analysis or select a case to view its live step map.</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -592,6 +667,7 @@
                 overview: 'Overview Dashboard',
                 cases: 'Case Management',
                 triage: 'Live USB Triage & Password Recovery',
+                provenance: 'Forensic Process &amp; Provenance Map',
                 ingest: 'Forensic Dump Ingestion',
                 analysis: 'Manual Correlation & Decryption',
                 explorer: 'Decrypted Evidence Explorer',
@@ -603,6 +679,7 @@
             if (viewName === 'overview') loadOverview();
             if (viewName === 'cases') loadCases();
             if (viewName === 'triage') loadTriage();
+            if (viewName === 'provenance') loadDefaultProvenance();
             if (viewName === 'explorer') loadExplorerDatabases();
             if (viewName === 'pairing') loadPairing();
         }
@@ -649,9 +726,14 @@
                         <td>${c.device_count}</td>
                         <td><span class="status-pill status-decrypted">${c.status.toUpperCase()}</span></td>
                         <td>
-                            <a href="/api/cases/${c.case_id}/pdf" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:0.8rem;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
-                                📄 Download PDF
-                            </a>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <a href="/api/cases/${c.case_id}/pdf" target="_blank" class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">
+                                    📄 PDF
+                                </a>
+                                <button class="btn btn-secondary" style="padding:4px 8px;font-size:0.75rem;" onclick="loadCaseProvenance('${c.case_id}')">
+                                    🗺️ Map
+                                </button>
+                            </div>
                         </td>
                     </tr>`;
                     tableBody.innerHTML += row;
@@ -723,6 +805,10 @@
                 const data = await res.json();
                 if (res.ok) {
                     cBox.textContent += `🎉 Ingestion Complete!\nFormat: ${data.format}\nTotal Databases: ${data.total_databases}\nDecrypted: ${data.decrypted_count}\nPlain: ${data.plain_count}\nHTML Report: ${data.report_html}\n`;
+                    if (data.provenance_map && data.provenance_map.length) {
+                        currentProvenanceSteps = data.provenance_map;
+                        cBox.innerHTML += `<button class="btn btn-primary" style="margin-top:10px;" onclick="renderProvenanceTimeline(currentProvenanceSteps);switchView('provenance');">🗺️ View Interactive Process Map (${data.provenance_map.length} Steps)</button>`;
+                    }
                 } else {
                     cBox.textContent += `[-] Error: ${data.detail}\n`;
                 }
@@ -747,6 +833,10 @@
                 const data = await res.json();
                 if (res.ok) {
                     cBox.textContent += `🎉 Analysis Finished!\nDecrypted: ${data.decrypted_count} | Plain: ${data.plain_count} | Locked: ${data.locked_count}\n`;
+                    if (data.provenance_map && data.provenance_map.length) {
+                        currentProvenanceSteps = data.provenance_map;
+                        cBox.innerHTML += `<button class="btn btn-primary" style="margin-top:10px;" onclick="renderProvenanceTimeline(currentProvenanceSteps);switchView('provenance');">🗺️ View Interactive Process Map (${data.provenance_map.length} Steps)</button>`;
+                    }
                     const resCard = document.getElementById('analysis-results-card');
                     resCard.style.display = 'block';
                     const tbody = document.querySelector('#analysis-results-table tbody');
@@ -1114,6 +1204,112 @@
                 btn.disabled = false;
                 btn.textContent = '🔓 Attack Backup Password';
             }
+        }
+
+        let currentProvenanceSteps = [];
+
+        function renderProvenanceTimeline(steps) {
+            currentProvenanceSteps = steps || [];
+            const tbody = document.querySelector('#provenance-table tbody');
+            tbody.innerHTML = '';
+
+            if (!currentProvenanceSteps.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:18px;">No execution steps recorded yet. Run an analysis or select a case.</td></tr>';
+                return;
+            }
+
+            currentProvenanceSteps.forEach(s => {
+                const tr = document.createElement('tr');
+                const isWarn = s.status === 'warning';
+                const statusBadge = isWarn
+                    ? '<span class="status-pill status-locked">WARNING</span>'
+                    : '<span class="status-pill status-decrypted">SUCCESS</span>';
+
+                tr.innerHTML = `
+                    <td><strong>#${s.step_number}</strong></td>
+                    <td><span style="color:#60a5fa;font-weight:600;">${s.phase}</span></td>
+                    <td><code>${s.target || '-'}</code></td>
+                    <td style="color:#f8fafc;">${s.action}</td>
+                    <td style="color:var(--text-muted);font-size:0.8rem;">${s.timestamp}</td>
+                    <td>${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterProvenanceSteps() {
+            const query = (document.getElementById('provenance-search').value || '').toLowerCase().trim();
+            if (!query) {
+                renderProvenanceTimeline(currentProvenanceSteps);
+                return;
+            }
+            const filtered = currentProvenanceSteps.filter(s => {
+                return (s.phase && s.phase.toLowerCase().includes(query)) ||
+                       (s.action && s.action.toLowerCase().includes(query)) ||
+                       (s.target && s.target.toLowerCase().includes(query));
+            });
+            const tbody = document.querySelector('#provenance-table tbody');
+            tbody.innerHTML = '';
+            filtered.forEach(s => {
+                const tr = document.createElement('tr');
+                const isWarn = s.status === 'warning';
+                const statusBadge = isWarn
+                    ? '<span class="status-pill status-locked">WARNING</span>'
+                    : '<span class="status-pill status-decrypted">SUCCESS</span>';
+
+                tr.innerHTML = `
+                    <td><strong>#${s.step_number}</strong></td>
+                    <td><span style="color:#60a5fa;font-weight:600;">${s.phase}</span></td>
+                    <td><code>${s.target || '-'}</code></td>
+                    <td style="color:#f8fafc;">${s.action}</td>
+                    <td style="color:var(--text-muted);font-size:0.8rem;">${s.timestamp}</td>
+                    <td>${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function loadCaseProvenance(caseId) {
+            switchView('provenance');
+            const tbody = document.querySelector('#provenance-table tbody');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:18px;">Loading case execution provenance graph...</td></tr>';
+            try {
+                const res = await fetch(`/api/cases/${caseId}/provenance`);
+                const data = await res.json();
+                renderProvenanceTimeline(data.provenance_map || []);
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger);padding:18px;">Failed to load provenance: ${err}</td></tr>`;
+            }
+        }
+
+        async function loadDefaultProvenance() {
+            if (currentProvenanceSteps.length) {
+                renderProvenanceTimeline(currentProvenanceSteps);
+                return;
+            }
+            try {
+                const res = await fetch('/api/cases');
+                const cases = await res.json();
+                if (cases.length) {
+                    loadCaseProvenance(cases[0].case_id);
+                } else {
+                    renderProvenanceTimeline([]);
+                }
+            } catch (err) {
+                renderProvenanceTimeline([]);
+            }
+        }
+
+        function exportProvenanceJSON() {
+            if (!currentProvenanceSteps.length) {
+                alert('No provenance steps to export.');
+                return;
+            }
+            const blob = new Blob([JSON.stringify(currentProvenanceSteps, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Forensic_Provenance_Process_Map.json`;
+            link.click();
         }
 
         // Initialize on load

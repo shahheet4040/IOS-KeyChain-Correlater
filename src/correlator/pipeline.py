@@ -10,6 +10,7 @@ from correlator.correlate import correlate as correlate_single
 from correlator.engine import CorrelationResult, correlate as correlate_engine
 from correlator.inventory import scan_containers
 from correlator.keychain import candidates, load_keychain
+from correlator.provenance import ProvenanceTracker, build_default_provenance_map
 from correlator.report import generate_html_report, generate_json_report, write_html, write_json
 from correlator.sqlcipher_util import PROFILES, export_decrypted, sha256_file
 from correlator.triage import classify, find_databases
@@ -269,10 +270,20 @@ def execute_pipeline(
                     except Exception as e:
                         print(f"  [-] Failed export for {r.relpath}: {e}", file=sys.stderr)
 
+    tracker = build_default_provenance_map(
+        results=results,
+        extraction_path=extraction_path,
+        keychain_path=keychain_path,
+        export_dir=export_dir,
+    )
+    provenance_timeline = tracker.get_timeline()
+    if out_dir:
+        tracker.export_json(Path(out_dir) / "provenance_map.json")
+
     json_data = None
     if report:
         report = Path(report).resolve()
-        json_data = generate_json_report(results, extraction_path, keychain_path, out_file=report)
+        json_data = generate_json_report(results, extraction_path, keychain_path, out_file=report, provenance=provenance_timeline)
 
     if html_report:
         html_report = Path(html_report).resolve()
@@ -285,7 +296,7 @@ def execute_pipeline(
             _ev_dir = (Path(out_dir) / "decrypted_export").resolve()
         elif html_report.parent and (html_report.parent / "decrypted_export").is_dir():
             _ev_dir = (html_report.parent / "decrypted_export").resolve()
-        generate_html_report(results, extraction_path, keychain_path, out_file=html_report, export_dir=_ev_dir)
+        generate_html_report(results, extraction_path, keychain_path, out_file=html_report, export_dir=_ev_dir, provenance=provenance_timeline)
 
     return {
         "results": results,
@@ -297,6 +308,7 @@ def execute_pipeline(
         "report_json_path": report,
         "report_html_path": html_report,
         "report_data": json_data,
+        "provenance_map": provenance_timeline,
     }
 
 

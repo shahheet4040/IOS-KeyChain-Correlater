@@ -200,6 +200,11 @@ class ForensicCorrelatorGUI:
         self.notebook.add(self.tab_logs, text=" 📜 Execution Logs ")
         self._setup_logs_view(self.tab_logs)
 
+        # Tab 7: Forensic Process Map & Provenance Timeline
+        self.tab_provenance = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(self.tab_provenance, text=" 🗺️ Forensic Process Map ")
+        self._setup_provenance_tab(self.tab_provenance)
+
     def _setup_results_table(self, parent):
         cols = ("status", "database", "bundle", "fingerprint", "profile", "wal")
         self.results_tree = ttk.Treeview(parent, columns=cols, show="headings", selectmode="browse")
@@ -421,6 +426,9 @@ class ForensicCorrelatorGUI:
 
         # Populate Database Viewer Dropdown
         self._populate_accessible_databases(result)
+
+        # Populate Forensic Process Map
+        self._populate_provenance_table(result.get("provenance_map", []))
 
         messagebox.showinfo(
             "Analysis Complete",
@@ -984,6 +992,12 @@ class ForensicCorrelatorGUI:
                     self.root.after(0, lambda: self.extraction_var.set(str(res["extraction_path"])))
                     if res.get("keychain_path"):
                         self.root.after(0, lambda: self.keychain_var.set(str(res["keychain_path"])))
+                    if res.get("pipeline_result"):
+                        pipe = res["pipeline_result"]
+                        self.pipeline_result = pipe
+                        self.root.after(0, lambda: self._populate_results_table(pipe["results"]))
+                        self.root.after(0, lambda: self._populate_accessible_databases(pipe))
+                        self.root.after(0, lambda: self._populate_provenance_table(pipe.get("provenance_map", [])))
                     self.root.after(0, lambda: messagebox.showinfo("Ingestion Succeeded", f"Decrypted {res['decrypted_count']} databases from {res['format']} dump!"))
                     self.root.after(0, lambda: self.notebook.select(self.tab_results))
                 else:
@@ -1110,6 +1124,79 @@ class ForensicCorrelatorGUI:
             messagebox.showinfo("Export Complete", f"HTML Search report saved to {dest}")
             if sys.platform == "win32":
                 os.startfile(dest)
+
+
+    def _setup_provenance_tab(self, parent):
+        top_frame = ttk.Frame(parent, padding=(0, 4))
+        top_frame.pack(fill=tk.X)
+
+        self.lbl_prov_summary = ttk.Label(
+            top_frame,
+            text="Chronological Forensic Execution Map (0 Steps Recorded)",
+            font=("Segoe UI", 10, "bold"),
+            foreground="#1e293b",
+        )
+        self.lbl_prov_summary.pack(side=tk.LEFT, pady=2)
+
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=6)
+
+        cols = ("step", "phase", "target", "action", "timestamp", "status")
+        self.prov_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
+        self.prov_tree.heading("step", text="Step #")
+        self.prov_tree.heading("phase", text="Forensic Phase")
+        self.prov_tree.heading("target", text="Target Object")
+        self.prov_tree.heading("action", text="Action & Cryptographic Operations")
+        self.prov_tree.heading("timestamp", text="Timestamp (UTC)")
+        self.prov_tree.heading("status", text="Status")
+
+        self.prov_tree.column("step", width=55, anchor=tk.CENTER)
+        self.prov_tree.column("phase", width=170, anchor=tk.W)
+        self.prov_tree.column("target", width=130, anchor=tk.W)
+        self.prov_tree.column("action", width=360, anchor=tk.W)
+        self.prov_tree.column("timestamp", width=150, anchor=tk.CENTER)
+        self.prov_tree.column("status", width=80, anchor=tk.CENTER)
+
+        p_vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.prov_tree.yview)
+        p_hsb = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.prov_tree.xview)
+        self.prov_tree.configure(yscrollcommand=p_vsb.set, xscrollcommand=p_hsb.set)
+
+        self.prov_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        p_vsb.grid(row=0, column=1, sticky=tk.NS)
+        p_hsb.grid(row=1, column=0, sticky=tk.EW)
+
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+    def _populate_provenance_table(self, steps: List[Dict[str, Any]]):
+        for item in self.prov_tree.get_children():
+            self.prov_tree.delete(item)
+
+        if not steps and self.pipeline_result:
+            from correlator.provenance import build_default_provenance_map
+            tracker = build_default_provenance_map(
+                self.pipeline_result.get("results", []),
+                self.extraction_var.get() or "Extraction",
+                self.keychain_var.get() or "Keychain",
+            )
+            steps = tracker.get_timeline()
+
+        self.lbl_prov_summary.config(text=f"Chronological Forensic Execution Map ({len(steps)} Steps Recorded)")
+
+        for s in steps:
+            status_val = "✅ SUCCESS" if s.get("status") == "success" else "⚠️ WARNING"
+            self.prov_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    f"#{s.get('step_number')}",
+                    s.get("phase"),
+                    s.get("target"),
+                    s.get("action"),
+                    s.get("timestamp"),
+                    status_val,
+                ),
+            )
 
 
 def main():
