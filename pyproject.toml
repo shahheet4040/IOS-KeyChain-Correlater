@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ios-keychain-correlator"
+version = "0.1.0"
+description = "Forensic correlation of iOS Keychain exports and SQLCipher application databases"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "sqlcipher3>=0.6.5",
+]
+
+[project.scripts]
+correlator = "correlator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pyrefly]
+python-interpreter-path = ".venv/Scripts/python.exe"
+search-path = ["src", "stubs"]
+site-package-path = [".venv/Lib/site-packages"]
+ignore-missing-imports = [
+    "sqlcipher3",
+    "sqlcipher3.*",
+    "pytest",
+    "pytest.*"
+]
+

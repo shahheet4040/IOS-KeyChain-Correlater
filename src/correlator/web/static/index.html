@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS Keychain Correlator — Digital Forensic Suite</title>
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --bg-card: #111827;
+            --bg-card-hover: #1f2937;
+            --border: #1f2937;
+            --border-focus: #3b82f6;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 270px;
+            background: #0d131f;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .brand {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .brand-text h2 { font-size: 0.95em; letter-spacing: 0.5px; }
+        .brand-text p { font-size: 0.72em; color: var(--text-muted); text-transform: uppercase; }
+
+        .nav-menu { padding: 16px 10px; flex: 1; overflow-y: auto; }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            margin-bottom: 4px;
+        }
+        .nav-item:hover { background: var(--bg-card); color: var(--text-main); }
+        .nav-item.active { background: var(--primary); color: #ffffff; font-weight: 600; }
+
+        /* Main Workspace */
+        .main-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        header {
+            height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: #0d131f;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header-title { font-size: 1.1em; font-weight: 600; }
+        .system-badges { display: flex; gap: 12px; align-items: center; }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: 600;
+            background: #1f2937;
+        }
+        .badge.online { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        /* View Panels */
+        .view-panel { display: none; }
+        .view-panel.active { display: block; animation: fadeIn 0.2s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Stats Cards Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 20px;
+        }
+        .stat-card .label { font-size: 0.8em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 1.8em; font-weight: bold; margin-top: 6px; }
+
+        /* Generic Card Container */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 12px;
+        }
+        .card-title { font-size: 1.05em; font-weight: 600; }
+
+        /* Forms & Inputs */
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 6px; }
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            background: #0a0e17;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-main);
+            font-size: 0.9em;
+            outline: none;
+            transition: border 0.15s;
+        }
+        .form-input:focus { border-color: var(--border-focus); }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s ease;
+            text-decoration: none;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-secondary { background: #374151; color: #fff; }
+        .btn-secondary:hover { background: #4b5563; }
+
+        /* Tables */
+        .table-responsive { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88em; }
+        th, td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+        th { background: #151d2c; color: var(--text-muted); font-weight: 600; font-size: 0.8em; text-transform: uppercase; }
+        tr:hover td { background: rgba(255, 255, 255, 0.02); }
+        code { background: #0b0f19; padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em; }
+
+        /* Status Pills */
+        .status-pill {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+        }
+        .status-decrypted { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .status-plain { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+        .status-locked { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+        /* Console Output Box */
+        .console-box {
+            background: #070a10;
+            border: 1px solid #1a2233;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 0.82em;
+            color: #d1d5db;
+            max-height: 250px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">🛡️</div>
+            <div class="brand-text">
+                <h2>iOS Correlator</h2>
+                <p>Forensic Suite 2.0</p>
+            </div>
+        </div>
+
+        <nav class="nav-menu">
+            <div class="nav-item active" onclick="switchView('overview')">📊 Overview Dashboard</div>
+            <div class="nav-item" onclick="switchView('cases')">📁 Case Management</div>
+            <div class="nav-item" onclick="switchView('ingest')">📦 Dump Ingestion</div>
+            <div class="nav-item" onclick="switchView('analysis')">⚡ Manual Correlation</div>
+            <div class="nav-item" onclick="switchView('explorer')">🔓 Browse Decrypted Data</div>
+            <div class="nav-item" onclick="switchView('search')">🔎 Evidence Search</div>
+            <div class="nav-item" onclick="switchView('pairing')">🔑 Pairing Trust Scanner</div>
+        </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+        <header>
+            <div class="header-title" id="view-title">Overview Dashboard</div>
+            <div class="system-badges">
+                <span class="badge online">● REST API Active</span>
+                <span class="badge" id="usbmux-badge">Checking USB...</span>
+            </div>
+        </header>
+
+        <main class="content-area">
+
+            <!-- 1. OVERVIEW DASHBOARD VIEW -->
+            <div id="view-overview" class="view-panel active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">Total Cases</div>
+                        <div class="value" id="stat-cases">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Registered Devices</div>
+                        <div class="value" id="stat-devices">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Workstation Pairing Records</div>
+                        <div class="value" id="stat-pairings" style="color:#60a5fa;">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Decryption Profiles</div>
+                        <div class="value" style="color:#34d399;">10 Ready</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🚀 Quick Start Actions</div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Perform automated acquisition, ingest Cellebrite dumps, or run evidence correlation:
+                    </p>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                        <button class="btn btn-primary" onclick="switchView('ingest')">📦 Ingest Cellebrite / GrayKey Dump</button>
+                        <button class="btn btn-secondary" onclick="switchView('analysis')">⚡ Correlate Extraction & Keychain</button>
+                        <button class="btn btn-secondary" onclick="switchView('search')">🔎 Deep Evidence Keyword Search</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. CASE MANAGEMENT VIEW -->
+            <div id="view-cases" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📁 Register New Forensic Case</div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div class="form-group">
+                            <label class="form-label">Case Name</label>
+                            <input type="text" id="case-name" class="form-input" placeholder="e.g. Operation CyberShield">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Official Case Number</label>
+                            <input type="text" id="case-num" class="form-input" placeholder="e.g. FSL/2026/089">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Scientific Officer / Examiner</label>
+                        <input type="text" id="case-examiner" class="form-input" placeholder="e.g. Scientific Officer A">
+                    </div>
+                    <button class="btn btn-primary" onclick="submitCreateCase()">Create Case</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📋 Active Forensic Cases</div>
+                        <button class="btn btn-secondary" onclick="loadCases()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="cases-table">
+                            <thead>
+                                <tr>
+                                    <th>Case ID</th>
+                                    <th>Case Name</th>
+                                    <th>Number</th>
+                                    <th>Examiner</th>
+                                    <th>Devices</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="6" style="text-align:center;">Loading cases...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. FORENSIC DUMP INGESTION VIEW -->
+            <div id="view-ingest" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📦 Cellebrite UFED / GrayKey / iTunes Auto-Ingestion</div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Select a directory containing an extraction from Cellebrite Physical Analyzer, GrayKey, or an iTunes backup.
+                        The engine auto-detects formats, locates keychain plists/XMLs, normalizes the container hierarchy, and decrypts evidence.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Forensic Dump Folder Absolute Path</label>
+                        <input type="text" id="ingest-path" class="form-input" placeholder="e.g. C:\Users\...\out\real_world_case">
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <button class="btn btn-primary" onclick="runIngest(true)">⚡ Ingest, Correlate & Decrypt</button>
+                        <button class="btn btn-secondary" onclick="detectDump()">🔍 Detect Format Only</button>
+                    </div>
+                    <div id="ingest-console" class="console-box" style="display:none;"></div>
+                </div>
+            </div>
+
+            <!-- 4. MANUAL ANALYSIS & DECRYPTION VIEW -->
+            <div id="view-analysis" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">⚡ Targeted Correlation & Decryption</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">iOS Extraction Root Directory</label>
+                        <input type="text" id="ana-ext" class="form-input" placeholder="Path to folder containing application containers">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Keychain File (JSON, Plist, XML, or CSV)</label>
+                        <input type="text" id="ana-kc" class="form-input" placeholder="Path to keychain.plist or keychain.json">
+                    </div>
+                    <button class="btn btn-primary" onclick="runManualAnalysis()">🚀 Start Analysis</button>
+                    <div id="analysis-console" class="console-box" style="display:none;"></div>
+                </div>
+
+                <div class="card" id="analysis-results-card" style="display:none;">
+                    <div class="card-header">
+                        <div class="card-title">📊 Correlation Results Summary</div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="analysis-results-table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Database</th>
+                                    <th>Bundle ID</th>
+                                    <th>Key Fingerprint</th>
+                                    <th>Profile</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4.5 DECRYPTED EVIDENCE EXPLORER VIEW -->
+            <div id="view-explorer" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🔓 Browse Decrypted Evidence & Tables</div>
+                        <button class="btn btn-secondary" onclick="loadExplorerDatabases()">🔄 Refresh Databases</button>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Inspect recovered chats, contacts, browsing history, and database records directly in the web application.
+                    </p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:end;margin-bottom:16px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">1. Select Decrypted Database</label>
+                            <select id="explorer-db-select" class="form-input" onchange="onDatabaseSelected()">
+                                <option value="">Loading databases...</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">2. Select Table</label>
+                            <select id="explorer-table-select" class="form-input" onchange="onTableSelected()">
+                                <option value="">Select database first</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" onclick="exportCurrentTableCSV()">⬇ Export CSV</button>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+                        <input type="text" id="explorer-search" class="form-input" style="width:280px;" placeholder="Filter rows live..." oninput="filterExplorerRows()">
+                        <span id="explorer-row-count" style="font-size:0.85em;color:var(--text-muted);align-self:center;"></span>
+                    </div>
+                    <div class="table-responsive" style="max-height:500px;">
+                        <table id="explorer-data-table">
+                            <thead></thead>
+                            <tbody>
+                                <tr><td style="text-align:center;color:var(--text-muted);padding:24px;">Select a database and table above to view records.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. GLOBAL EVIDENCE SEARCH VIEW -->
+            <div id="view-search" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🔎 Universal Evidence Keyword Search</div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Deep-scan all decrypted databases for phone numbers, suspect names, crypto addresses, or transaction notes.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Decrypted Databases Directory</label>
+                        <input type="text" id="search-dir" class="form-input" placeholder="e.g. C:\Users\...\out\real_world_case_results\decrypted_exports">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Target Keyword / Phone / Name</label>
+                        <input type="text" id="search-kw" class="form-input" placeholder="e.g. Mumbai, BTC, Suspect">
+                    </div>
+                    <button class="btn btn-primary" onclick="runSearch()">🔍 Search All Decrypted Evidence</button>
+                </div>
+
+                <div class="card" id="search-results-card" style="display:none;">
+                    <div class="card-header">
+                        <div class="card-title" id="search-results-title">Search Results</div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="search-results-table">
+                            <thead>
+                                <tr>
+                                    <th>Database</th>
+                                    <th>Table</th>
+                                    <th>Column</th>
+                                    <th>Match Preview Context</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. PAIRING SCANNER VIEW -->
+            <div id="view-pairing" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🔑 Workstation Lockdown Pairing Certificates</div>
+                        <button class="btn btn-secondary" onclick="loadPairing()">🔄 Rescan</button>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Displays trusted pairing records stored on this PC. A valid pairing record allows authorized logical acquisition even if the phone screen is locked.
+                    </p>
+                    <div class="table-responsive">
+                        <table id="pairing-table">
+                            <thead>
+                                <tr>
+                                    <th>Target UDID</th>
+                                    <th>WiFi MAC</th>
+                                    <th>Host ID</th>
+                                    <th>Certificates</th>
+                                    <th>Modified</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="5" style="text-align:center;">Scanning lockdown directories...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        function switchView(viewName) {
+            document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            const targetPanel = document.getElementById('view-' + viewName);
+            if (targetPanel) targetPanel.classList.add('active');
+
+            const titles = {
+                overview: 'Overview Dashboard',
+                cases: 'Case Management',
+                ingest: 'Forensic Dump Ingestion',
+                analysis: 'Manual Correlation & Decryption',
+                explorer: 'Decrypted Evidence Explorer',
+                search: 'Global Evidence Search',
+                pairing: 'Workstation Pairing Records'
+            };
+            document.getElementById('view-title').textContent = titles[viewName] || 'Dashboard';
+
+            if (viewName === 'overview') loadOverview();
+            if (viewName === 'cases') loadCases();
+            if (viewName === 'explorer') loadExplorerDatabases();
+            if (viewName === 'pairing') loadPairing();
+        }
+
+        async function loadOverview() {
+            try {
+                const res = await fetch('/api/overview');
+                const data = await res.json();
+                document.getElementById('stat-cases').textContent = data.total_cases;
+                document.getElementById('stat-devices').textContent = data.total_devices;
+                document.getElementById('stat-pairings').textContent = data.pairing_records_found;
+
+                const usbRes = await fetch('/api/usb/status');
+                const usbData = await usbRes.json();
+                const badge = document.getElementById('usbmux-badge');
+                if (usbData.usbmuxd_service_running) {
+                    badge.textContent = '● Apple Service Ready';
+                    badge.className = 'badge online';
+                } else {
+                    badge.textContent = '○ Apple Service Offline';
+                    badge.className = 'badge';
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function loadCases() {
+            const tableBody = document.querySelector('#cases-table tbody');
+            try {
+                const res = await fetch('/api/cases');
+                const cases = await res.json();
+                tableBody.innerHTML = '';
+                if (cases.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">No cases registered yet. Create one above.</td></tr>';
+                    return;
+                }
+                cases.forEach(c => {
+                    const row = `<tr>
+                        <td><code>${c.case_id.substring(0,8)}...</code></td>
+                        <td><strong>${c.case_name}</strong></td>
+                        <td>${c.case_number}</td>
+                        <td>${c.examiner}</td>
+                        <td>${c.device_count}</td>
+                        <td><span class="status-pill status-decrypted">${c.status.toUpperCase()}</span></td>
+                    </tr>`;
+                    tableBody.innerHTML += row;
+                });
+            } catch (err) {
+                tableBody.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">Failed to load cases: ${err}</td></tr>`;
+            }
+        }
+
+        async function submitCreateCase() {
+            const name = document.getElementById('case-name').value.trim();
+            const num = document.getElementById('case-num').value.trim();
+            const examiner = document.getElementById('case-examiner').value.trim();
+            if (!name || !num || !examiner) {
+                alert('Please fill out Case Name, Case Number, and Examiner.');
+                return;
+            }
+            const res = await fetch('/api/cases', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({case_name: name, case_number: num, examiner: examiner})
+            });
+            if (res.ok) {
+                alert('Case registered successfully!');
+                document.getElementById('case-name').value = '';
+                document.getElementById('case-num').value = '';
+                document.getElementById('case-examiner').value = '';
+                loadCases();
+            } else {
+                alert('Error creating case.');
+            }
+        }
+
+        async function detectDump() {
+            const path = document.getElementById('ingest-path').value.trim();
+            if (!path) { alert('Please enter a folder path.'); return; }
+            const cBox = document.getElementById('ingest-console');
+            cBox.style.display = 'block';
+            cBox.textContent = `[*] Detecting format of: ${path}...\n`;
+            try {
+                const res = await fetch('/api/ingest/detect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: path})
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    cBox.textContent += `[+] Detected Format: ${data.detected_format.toUpperCase()}\n`;
+                } else {
+                    cBox.textContent += `[-] Error: ${data.detail}\n`;
+                }
+            } catch (err) {
+                cBox.textContent += `[-] Request failed: ${err}\n`;
+            }
+        }
+
+        async function runIngest(autoAnalyze) {
+            const path = document.getElementById('ingest-path').value.trim();
+            if (!path) { alert('Please enter a folder path.'); return; }
+            const cBox = document.getElementById('ingest-console');
+            cBox.style.display = 'block';
+            cBox.textContent = `[*] Starting Ingestion on: ${path}...\n`;
+            try {
+                const res = await fetch('/api/ingest/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({dump_path: path, auto_analyze: autoAnalyze})
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    cBox.textContent += `🎉 Ingestion Complete!\nFormat: ${data.format}\nTotal Databases: ${data.total_databases}\nDecrypted: ${data.decrypted_count}\nPlain: ${data.plain_count}\nHTML Report: ${data.report_html}\n`;
+                } else {
+                    cBox.textContent += `[-] Error: ${data.detail}\n`;
+                }
+            } catch (err) {
+                cBox.textContent += `[-] Request failed: ${err}\n`;
+            }
+        }
+
+        async function runManualAnalysis() {
+            const ext = document.getElementById('ana-ext').value.trim();
+            const kc = document.getElementById('ana-kc').value.trim();
+            if (!ext || !kc) { alert('Please provide extraction and keychain paths.'); return; }
+            const cBox = document.getElementById('analysis-console');
+            cBox.style.display = 'block';
+            cBox.textContent = `[*] Starting correlation on ${ext}...\n`;
+            try {
+                const res = await fetch('/api/analysis/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({extraction_path: ext, keychain_path: kc})
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    cBox.textContent += `🎉 Analysis Finished!\nDecrypted: ${data.decrypted_count} | Plain: ${data.plain_count} | Locked: ${data.locked_count}\n`;
+                    const resCard = document.getElementById('analysis-results-card');
+                    resCard.style.display = 'block';
+                    const tbody = document.querySelector('#analysis-results-table tbody');
+                    tbody.innerHTML = '';
+                    data.databases.forEach(db => {
+                        const pillClass = db.status === 'decrypted' ? 'status-decrypted' : (db.status === 'plain' ? 'status-plain' : 'status-locked');
+                        tbody.innerHTML += `<tr>
+                            <td><span class="status-pill ${pillClass}">${db.status.toUpperCase()}</span></td>
+                            <td>${db.name}</td>
+                            <td><code>${db.bundle_id || '-'}</code></td>
+                            <td><code>${db.key_fingerprint || '-'}</code></td>
+                            <td>${db.profile || '-'}</td>
+                        </tr>`;
+                    });
+                } else {
+                    cBox.textContent += `[-] Error: ${data.detail}\n`;
+                }
+            } catch (err) {
+                cBox.textContent += `[-] Request failed: ${err}\n`;
+            }
+        }
+
+        async function runSearch() {
+            const dir = document.getElementById('search-dir').value.trim();
+            const kw = document.getElementById('search-kw').value.trim();
+            if (!dir || !kw) { alert('Please enter both directory and keyword.'); return; }
+            try {
+                const res = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({directory: dir, keyword: kw})
+                });
+                const data = await res.json();
+                const card = document.getElementById('search-results-card');
+                card.style.display = 'block';
+                document.getElementById('search-results-title').textContent = `Search Hits for "${kw}" (${data.total_hits} found)`;
+                const tbody = document.querySelector('#search-results-table tbody');
+                tbody.innerHTML = '';
+                if (data.hits.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">No records found matching keyword.</td></tr>';
+                    return;
+                }
+                data.hits.forEach(h => {
+                    tbody.innerHTML += `<tr>
+                        <td><strong>${h.db_name}</strong></td>
+                        <td><code>${h.table_name}</code></td>
+                        <td><code>${h.column_name}</code></td>
+                        <td>${h.match_context}</td>
+                    </tr>`;
+                });
+            } catch (err) {
+                alert(`Search error: ${err}`);
+            }
+        }
+
+        // ── Evidence Explorer Logic ────────────────────────────────────
+
+        let currentExplorerRows = [];
+        let currentExplorerColumns = [];
+
+        async function loadExplorerDatabases() {
+            const select = document.getElementById('explorer-db-select');
+            select.innerHTML = '<option value="">Loading databases...</option>';
+            try {
+                const res = await fetch('/api/evidence/databases');
+                const dbs = await res.json();
+                select.innerHTML = '';
+                if (dbs.length === 0) {
+                    select.innerHTML = '<option value="">No decrypted databases found</option>';
+                    return;
+                }
+                dbs.forEach((db, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = db.path;
+                    opt.textContent = `${db.name} (${db.relpath})`;
+                    select.appendChild(opt);
+                });
+                onDatabaseSelected();
+            } catch (err) {
+                select.innerHTML = `<option value="">Error loading: ${err}</option>`;
+            }
+        }
+
+        async function onDatabaseSelected() {
+            const dbPath = document.getElementById('explorer-db-select').value;
+            const tableSelect = document.getElementById('explorer-table-select');
+            if (!dbPath) return;
+
+            tableSelect.innerHTML = '<option value="">Loading tables...</option>';
+            try {
+                const res = await fetch(`/api/evidence/tables?db_path=${encodeURIComponent(dbPath)}`);
+                const data = await res.json();
+                tableSelect.innerHTML = '';
+                if (!data.tables || data.tables.length === 0) {
+                    tableSelect.innerHTML = '<option value="">No tables found</option>';
+                    return;
+                }
+                data.tables.forEach(tbl => {
+                    const opt = document.createElement('option');
+                    opt.value = tbl.name;
+                    opt.textContent = `${tbl.name} (${tbl.row_count} rows)`;
+                    tableSelect.appendChild(opt);
+                });
+                onTableSelected();
+            } catch (err) {
+                tableSelect.innerHTML = `<option value="">Error loading: ${err}</option>`;
+            }
+        }
+
+        async function onTableSelected() {
+            const dbPath = document.getElementById('explorer-db-select').value;
+            const tableName = document.getElementById('explorer-table-select').value;
+            const tableEl = document.getElementById('explorer-data-table');
+            const thead = tableEl.querySelector('thead');
+            const tbody = tableEl.querySelector('tbody');
+            const countLabel = document.getElementById('explorer-row-count');
+
+            if (!dbPath || !tableName) return;
+            tbody.innerHTML = '<tr><td style="text-align:center;color:var(--text-muted);padding:24px;">Loading rows...</td></tr>';
+
+            try {
+                const res = await fetch(`/api/evidence/rows?db_path=${encodeURIComponent(dbPath)}&table=${encodeURIComponent(tableName)}&limit=1000`);
+                const data = await res.json();
+
+                currentExplorerColumns = data.columns || [];
+                currentExplorerRows = data.rows || [];
+
+                // Render Header
+                thead.innerHTML = '<tr>' + currentExplorerColumns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+                renderExplorerRows(currentExplorerRows);
+            } catch (err) {
+                tbody.innerHTML = `<tr><td style="color:var(--danger);padding:24px;">Failed to load rows: ${err}</td></tr>`;
+            }
+        }
+
+        function renderExplorerRows(rowsToRender) {
+            const tbody = document.getElementById('explorer-data-table').querySelector('tbody');
+            const countLabel = document.getElementById('explorer-row-count');
+            tbody.innerHTML = '';
+
+            if (rowsToRender.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="100" style="text-align:center;color:var(--text-muted);padding:24px;">No rows match filter.</td></tr>';
+                countLabel.textContent = `0 / ${currentExplorerRows.length} rows`;
+                return;
+            }
+
+            rowsToRender.forEach(row => {
+                const tr = document.createElement('tr');
+                row.forEach(val => {
+                    const td = document.createElement('td');
+                    td.textContent = val !== null ? String(val) : '<NULL>';
+                    if (val === null) td.style.color = '#6b7280';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            countLabel.textContent = `${rowsToRender.length} / ${currentExplorerRows.length} rows loaded`;
+        }
+
+        function filterExplorerRows() {
+            const term = document.getElementById('explorer-search').value.toLowerCase().trim();
+            if (!term) {
+                renderExplorerRows(currentExplorerRows);
+                return;
+            }
+            const filtered = currentExplorerRows.filter(r => {
+                return r.some(cell => cell !== null && String(cell).toLowerCase().includes(term));
+            });
+            renderExplorerRows(filtered);
+        }
+
+        function exportCurrentTableCSV() {
+            const tableName = document.getElementById('explorer-table-select').value;
+            if (!currentExplorerColumns.length || !currentExplorerRows.length) {
+                alert('No data to export.');
+                return;
+            }
+            let csv = currentExplorerColumns.map(c => `"${c.replace(/"/g, '""')}"`).join(',') + '\n';
+            currentExplorerRows.forEach(row => {
+                csv += row.map(v => `"${(v !== null ? String(v) : '').replace(/"/g, '""')}"`).join(',') + '\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${tableName || 'evidence'}_export.csv`;
+            link.click();
+        }
+
+        async function loadPairing() {
+            const tableBody = document.querySelector('#pairing-table tbody');
+            try {
+                const res = await fetch('/api/pairing');
+                const records = await res.json();
+                tableBody.innerHTML = '';
+                if (records.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No pairing records found on this system.</td></tr>';
+                    return;
+                }
+                records.forEach(r => {
+                    const certs = (r.has_escrow_bag ? 'Escrow ' : '') + (r.has_device_cert ? 'DevCert ' : '') + (r.has_host_cert ? 'HostCert' : '');
+                    tableBody.innerHTML += `<tr>
+                        <td><code>${r.udid}</code></td>
+                        <td>${r.wifi_mac || 'N/A'}</td>
+                        <td><code>${r.host_id || 'N/A'}</code></td>
+                        <td>${certs || 'Minimal'}</td>
+                        <td>${r.file_modified || 'N/A'}</td>
+                    </tr>`;
+                });
+            } catch (err) {
+                tableBody.innerHTML = `<tr><td colspan="5" style="color:var(--danger);">Error scanning records: ${err}</td></tr>`;
+            }
+        }
+
+        // Initialize on load
+        loadOverview();
+    </script>
+</body>
+</html>

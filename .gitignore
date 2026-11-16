@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Local Outputs & Workspaces
+out/
+cases_workspace/
+*.bak
+*.log
+
+# IDE & Editor files
+.vscode/
+.idea/

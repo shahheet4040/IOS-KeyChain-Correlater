@@ -1,0 +1,10 @@
+python-interpreter-path = ".venv/Scripts/python.exe"
+search-path = ["src", "stubs"]
+site-package-path = [".venv/Lib/site-packages"]
+
+ignore-missing-imports = [
+    "sqlcipher3",
+    "sqlcipher3.*",
+    "pytest",
+    "pytest.*"
+]

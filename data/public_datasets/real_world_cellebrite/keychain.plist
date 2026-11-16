@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>acct</key>
+		<string>databaseKey</string>
+		<key>agrp</key>
+		<string>group.org.whispersystems.signal</string>
+		<key>svce</key>
+		<string>org.whispersystems.signal.database</string>
+		<key>v_Data</key>
+		<data>
+		tOrW9bdwFmE0NIhpHpUWXXcDmScKZON9JluFn5OF+hM=
+		</data>
+	</dict>
+	<dict>
+		<key>acct</key>
+		<string>WCDBKey</string>
+		<key>agrp</key>
+		<string>com.tencent.xin</string>
+		<key>svce</key>
+		<string>com.tencent.xin.wcdb</string>
+		<key>v_Data</key>
+		<data>
+		BjCQXrFzZKE6PzbXKxayN1amQeRxRgpiZ3kGqK3ZezM=
+		</data>
+	</dict>
+	<dict>
+		<key>acct</key>
+		<string>suspect.target@icloud.com</string>
+		<key>agrp</key>
+		<string>apple</string>
+		<key>svce</key>
+		<string>com.apple.account.AppleID</string>
+		<key>v_Data</key>
+		<data>
+		U3VwZXJTZWNyZXRQYXNzd29yZDIwMjYh
+		</data>
+	</dict>
+</array>
+</plist>
