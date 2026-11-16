@@ -502,6 +502,28 @@
                         </table>
                     </div>
                 </div>
+
+                <!-- Cross-Case Comparison Card -->
+                <div class="card" style="margin-top:20px;">
+                    <div class="card-header">
+                        <div class="card-title">🔍 Cross-Case Evidence Comparison Engine</div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.88em;margin-bottom:14px;">
+                        Compare two registered cases to detect shared suspect contacts, overlapping GPS waypoints (within 1km), common keyword alerts, and concurrent timeline activities.
+                    </p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Primary Case ID</label>
+                            <input type="text" id="compare-case-a" class="form-input" placeholder="Paste Primary Case UUID">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Secondary Case ID</label>
+                            <input type="text" id="compare-case-b" class="form-input" placeholder="Paste Secondary Case UUID">
+                        </div>
+                        <button class="btn btn-primary" onclick="runCaseComparison()">⚡ Compare Cases</button>
+                    </div>
+                    <div id="compare-results-box" class="console-box" style="display:none;margin-top:14px;max-height:350px;"></div>
+                </div>
             </div>
 
             <!-- 2.5 LIVE USB TRIAGE & PASSWORD RECOVERY VIEW -->
@@ -1457,14 +1479,20 @@
                         <td>${c.device_count}</td>
                         <td><span class="status-pill status-decrypted">${c.status.toUpperCase()}</span></td>
                         <td>
-                            <div style="display:flex;gap:6px;align-items:center;">
-                                <a href="/api/cases/${c.case_id}/pdf" target="_blank" class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">
+                            <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+                                <a href="/api/cases/${c.case_id}/pdf" target="_blank" class="btn btn-primary" style="padding:4px 6px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:2px;" title="Official Forensic PDF Report">
                                     📄 PDF
                                 </a>
-                                <a href="/api/cases/${c.case_id}/consolidated-db" class="btn btn-secondary" style="padding:4px 8px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:3px;background:#1e3a8a;border:1px solid #3b82f6;" title="Download Unified Consolidated SQLite Master Database">
-                                    💾 Master DB
+                                <a href="/api/cases/${c.case_id}/consolidated-db" class="btn btn-secondary" style="padding:4px 6px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:2px;background:#1e3a8a;border:1px solid #3b82f6;" title="Consolidated Master SQLite DB">
+                                    💾 DB
                                 </a>
-                                <button class="btn btn-secondary" style="padding:4px 8px;font-size:0.75rem;" onclick="loadCaseProvenance('${c.case_id}')">
+                                <a href="/api/cases/${c.case_id}/export/xlsx" class="btn btn-secondary" style="padding:4px 6px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:2px;background:#065f46;border:1px solid #10b981;" title="Export Excel Spreadsheet">
+                                    📊 XLSX
+                                </a>
+                                <a href="/api/cases/${c.case_id}/export/jsonl" class="btn btn-secondary" style="padding:4px 6px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:2px;background:#374151;border:1px solid #6b7280;" title="Export JSON Lines Stream">
+                                    📄 JSONL
+                                </a>
+                                <button class="btn btn-secondary" style="padding:4px 6px;font-size:0.75rem;" onclick="loadCaseProvenance('${c.case_id}')" title="View Step-by-Step Map">
                                     🗺️ Map
                                 </button>
                             </div>
@@ -2385,8 +2413,53 @@
             }
         }
 
+        async function runCaseComparison() {
+            const caseA = document.getElementById('compare-case-a').value.trim();
+            const caseB = document.getElementById('compare-case-b').value.trim();
+            if (!caseA || !caseB) {
+                alert('Please enter both Primary and Secondary Case IDs.');
+                return;
+            }
+            const box = document.getElementById('compare-results-box');
+            box.style.display = 'block';
+            box.textContent = 'Comparing case databases for shared contacts, locations, and alerts...';
+
+            try {
+                const res = await fetch('/api/cases/compare', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({case_id_a: caseA, case_id_b: caseB})
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    box.textContent = `Comparison failed: ${data.detail || JSON.stringify(data)}`;
+                    return;
+                }
+                box.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                box.textContent = `Error executing comparison: ${err}`;
+            }
+        }
+
         // Initialize on load
         loadOverview();
     </script>
+
+    <!-- Quick Actions Floating Navigation Hub -->
+    <div style="position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:999;background:rgba(15,23,42,0.95);padding:10px;border-radius:12px;border:1px solid rgba(59,130,246,0.3);box-shadow:0 8px 24px rgba(0,0,0,0.6);backdrop-filter:blur(8px);">
+        <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;padding-left:4px;margin-bottom:2px;">⚡ Shortcuts</div>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.08);justify-content:flex-start;display:flex;align-items:center;gap:6px;" onclick="switchView('docs')">
+            📖 User Guide
+        </button>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.08);justify-content:flex-start;display:flex;align-items:center;gap:6px;" onclick="switchView('cases')">
+            📁 Cases Hub
+        </button>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.08);justify-content:flex-start;display:flex;align-items:center;gap:6px;" onclick="switchView('search')">
+            🔎 Search
+        </button>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.08);justify-content:flex-start;display:flex;align-items:center;gap:6px;" onclick="switchView('triage')">
+            ⚡ USB Triage
+        </button>
+    </div>
 </body>
 </html>

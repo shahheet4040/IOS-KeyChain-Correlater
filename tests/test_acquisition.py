@@ -152,3 +152,116 @@ def test_backup_password_cracker(tmp_path):
     recovered = cracker.dictionary_attack(wl_file)
     assert recovered == "case_password_99"
 
+
+
+# ── New tests for AFC improvements and BackupPasswordCracker additions ──────
+
+def _make_manifest(tmp_path: Path, password: str, iterations: int = 52) -> Path:
+    """Helper: create a minimal Manifest.plist for a given password."""
+    salt = b"test_smart_salt_1"
+    expected = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations, 32)
+    manifest_data = {
+        "IsEncrypted": True,
+        "Version": "10.0",
+        "Lockdown": {
+            "PasswordSalt": salt,
+            "PasswordHash": expected,
+            "Iterations": iterations,
+        },
+    }
+    p = tmp_path / "Manifest.plist"
+    with open(p, "wb") as f:
+        plistlib.dump(manifest_data, f)
+    return p
+
+
+def test_afc_file_filter(tmp_path):
+    """
+    partial_afc_pull must only extract files whose extension is in MEDIA_EXTENSIONS.
+    Non-media files should be skipped (skipped=True in metadata).
+    """
+    from unittest.mock import MagicMock, patch
+
+    # Simulate /DCIM/100APPLE containing a mix of media and non-media files
+    media_files = ["IMG_0001.jpg", "IMG_0002.heic", "VID_0001.mov", "audio.m4a"]
+    non_media_files = ["Thumbs.db", "notes.txt", ".DS_Store", "config.xml"]
+    all_files = media_files + non_media_files
+
+    def _listdir(path):
+        if path == "/DCIM":
+            return ["100APPLE"]
+        if path == "/DCIM/100APPLE":
+            return all_files
+        # Silently fail for other AFC roots that aren't set up
+        raise Exception("not found")
+
+    def _get_file_contents(path):
+        # Return 10 bytes of dummy data for every file
+        return b"\x00" * 10
+
+    mock_afc = MagicMock()
+    mock_afc.listdir.side_effect = _listdir
+    mock_afc.get_file_contents.side_effect = _get_file_contents
+
+    mock_lockdown = MagicMock()
+
+    with patch("correlator.acquisition.PYMOBILEDEVICE3_AVAILABLE", True), \
+         patch("correlator.acquisition.AfcService", return_value=mock_afc):
+        pfb = PasswordFreeBackup(mock_lockdown, "test-udid")
+        result = pfb.partial_afc_pull(tmp_path)
+
+    # result is a list of metadata dicts
+    assert isinstance(result, list), "partial_afc_pull should return a list"
+
+    extracted = [r for r in result if not r["skipped"]]
+    skipped = [r for r in result if r["skipped"]]
+
+    extracted_names = {Path(r["path"]).name for r in extracted}
+    skipped_names = {Path(r["path"]).name for r in skipped}
+
+    # Every media file must be extracted (not skipped)
+    for mf in media_files:
+        assert mf in extracted_names, f"{mf} should have been extracted"
+
+    # Every non-media file must be skipped
+    for nmf in non_media_files:
+        assert nmf in skipped_names, f"{nmf} should have been skipped"
+
+    # Skip reasons for non-media files mention 'non-media'
+    for r in skipped:
+        if Path(r["path"]).name in non_media_files:
+            assert r["skip_reason"] is not None
+            assert "non-media" in r["skip_reason"]
+
+
+def test_smart_attack_common_passwords(tmp_path):
+    """
+    smart_attack() should find a password that is in COMMON_PASSWORDS ("apple")
+    without needing an external wordlist.
+    """
+    manifest_p = _make_manifest(tmp_path, "apple")
+    cracker = BackupPasswordCracker(manifest_p)
+    found = cracker.smart_attack()
+    assert found == "apple", f"Expected 'apple', got {found!r}"
+
+
+def test_tried_count(tmp_path):
+    """
+    tried_count must increment by exactly 1 for each candidate tested in smart_attack().
+    If the password is not in COMMON_PASSWORDS, the whole list is exhausted.
+    """
+    # Use a password that is NOT in COMMON_PASSWORDS so the full list is searched
+    manifest_p = _make_manifest(tmp_path, "this_is_not_in_common_list_xyz_99")
+    cracker = BackupPasswordCracker(manifest_p)
+
+    assert cracker.tried_count == 0
+
+    # smart_attack with no extra candidates — exhausts COMMON_PASSWORDS
+    result = cracker.smart_attack(candidate_list=None)
+    assert result is None  # not found
+    assert cracker.tried_count == len(BackupPasswordCracker.COMMON_PASSWORDS)
+
+    # Second call with one extra candidate (also wrong) — tried_count keeps growing
+    prev_count = cracker.tried_count
+    cracker.smart_attack(candidate_list=["still_not_it"])
+    assert cracker.tried_count == prev_count + len(BackupPasswordCracker.COMMON_PASSWORDS) + 1

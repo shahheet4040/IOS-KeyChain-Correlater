@@ -85,3 +85,62 @@ def test_scan_evidence_for_alerts(tmp_path):
     alerts = scan_evidence_for_alerts(tmp_path)
     assert len(alerts) >= 1
     assert any(a.category == "Crypto" for a in alerts)
+
+
+# ---------------------------------------------------------------------------
+# Performance optimisation tests
+# ---------------------------------------------------------------------------
+
+def test_column_type_filtering(tmp_path):
+    """INT columns must be skipped; TEXT columns with crypto content must fire."""
+    db_file = tmp_path / "typed_cols.sqlite"
+    con = sqlite3.connect(str(db_file))
+    con.execute("""
+        CREATE TABLE wallet_data (
+            row_id INTEGER,
+            address TEXT
+        );
+    """)
+    # row_id is INTEGER — no pattern match expected from it.
+    # address is TEXT — Bitcoin address should trigger a Crypto alert.
+    con.execute(
+        "INSERT INTO wallet_data VALUES (1, '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa');"
+    )
+    con.commit()
+    con.close()
+
+    alerts = scan_database_for_alerts(db_file)
+    assert len(alerts) >= 1, "Expected at least one alert from TEXT column"
+    crypto_alerts = [a for a in alerts if a.category == "Crypto"]
+    assert crypto_alerts, "Expected a Crypto alert from the TEXT address column"
+    # No alert should reference the integer column (row_id)
+    assert all(a.column_name != "row_id" for a in alerts), (
+        "INT column row_id should have been skipped"
+    )
+
+
+def test_early_exit_on_max_alerts(tmp_path):
+    """scan_database_for_alerts must stop at exactly max_alerts_per_db alerts."""
+    db_file = tmp_path / "many_rows.sqlite"
+    con = sqlite3.connect(str(db_file))
+    con.execute("CREATE TABLE creds (note TEXT);")
+    # 200 rows each containing "password" → triggers Credentials alert per row
+    con.executemany(
+        "INSERT INTO creds VALUES (?);",
+        [(f"stored password number {i:03d}",) for i in range(200)],
+    )
+    con.commit()
+    con.close()
+
+    alerts = scan_database_for_alerts(db_file, max_alerts_per_db=5)
+    assert len(alerts) == 5, f"Expected exactly 5 alerts, got {len(alerts)}"
+
+
+def test_scan_speed_stats():
+    from correlator.watchlists import scan_speed_stats
+
+    stats = scan_speed_stats()
+    assert "patterns_total" in stats, "Missing key: patterns_total"
+    assert "categories_count" in stats, "Missing key: categories_count"
+    assert stats["patterns_total"] > 0, "patterns_total must be positive"
+    assert stats["categories_count"] > 0, "categories_count must be positive"

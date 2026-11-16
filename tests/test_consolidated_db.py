@@ -123,3 +123,51 @@ def test_consolidated_db_api_endpoints():
     assert gen_resp.status_code == 200
     assert gen_resp.media_type == "application/vnd.sqlite3"
     assert Path(gen_resp.path).is_file()
+
+
+def test_new_tables_exist(tmp_path):
+    from correlator.consolidated_db import generate_consolidated_database, init_consolidated_schema
+    import sqlite3
+    db = tmp_path / "test.sqlite"
+    con = sqlite3.connect(str(db))
+    init_consolidated_schema(con)
+    cur = con.cursor()
+    tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    assert "contacts" in tables
+    assert "app_artifacts" in tables
+    assert "file_registry" in tables
+    con.close()
+
+
+def test_file_registry_populated(tmp_path):
+    # Setup a decrypted dir with a sqlite file
+    decrypted_dir = tmp_path / "decrypted"
+    decrypted_dir.mkdir()
+    sample_db = decrypted_dir / "sample_evidence.sqlite"
+    s_con = sqlite3.connect(str(sample_db))
+    s_con.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, value TEXT);")
+    s_con.execute("INSERT INTO data VALUES (1, 'test');")
+    s_con.commit()
+    s_con.close()
+
+    out_file = tmp_path / "consolidated.sqlite"
+    summary = generate_consolidated_database(
+        output_path=out_file,
+        decrypted_dirs=[decrypted_dir],
+    )
+
+    # Open result db, query file_registry
+    import sqlite3 as _sqlite3
+    con = _sqlite3.connect(str(out_file))
+    cur = con.cursor()
+    rows = cur.execute("SELECT file_name, mime_type, extracted_via FROM file_registry").fetchall()
+    con.close()
+
+    assert len(rows) >= 1
+    file_names = [r[0] for r in rows]
+    assert "sample_evidence.sqlite" in file_names
+    # Check mime_type and extracted_via for that row
+    for row in rows:
+        if row[0] == "sample_evidence.sqlite":
+            assert row[1] == "application/vnd.sqlite3"
+            assert row[2] == "decryption"

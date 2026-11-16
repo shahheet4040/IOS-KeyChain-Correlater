@@ -233,61 +233,129 @@ class PasswordFreeBackup:
         out_p.mkdir(parents=True, exist_ok=True)
         return acquire_backup(out_p, udid=self.udid, progress_callback=progress_callback)
 
+    # Media extensions that AFC pull will extract
+    MEDIA_EXTENSIONS = {
+        ".jpg", ".jpeg", ".png", ".heic", ".heif",
+        ".mov", ".mp4", ".m4v", ".aac", ".m4a", ".3gp", ".pdf",
+    }
+
     def partial_afc_pull(
         self,
         output_dir: Path | str,
         progress_callback: Optional[Callable[[str, float], None]] = None,
-    ) -> Dict[str, int]:
+        max_file_size_mb: float = 100,
+    ) -> List[Dict[str, Any]]:
         """
         Fallback for ENCRYPTED_UNKNOWN tier.
-        AFC (Apple File Conduit) accesses photos (/DCIM), recordings, and crash logs
+        AFC (Apple File Conduit) accesses photos (/DCIM/Downloads/Books/Documents/Recordings)
         without requiring the unknown backup password.
+
+        Returns a list of metadata dicts per file attempted:
+            {"path": str, "size_bytes": int, "extension": str, "skipped": bool, "skip_reason": str|None}
         """
+        import logging
+        _log = logging.getLogger(__name__)
+
         out_p = Path(output_dir).resolve() / "afc_extracted_media"
         out_p.mkdir(parents=True, exist_ok=True)
-        pulled: Dict[str, int] = {}
+        metadata_log: List[Dict[str, Any]] = []
 
         if not PYMOBILEDEVICE3_AVAILABLE or not self.lockdown:
-            return pulled
+            return metadata_log
+
+        afc_paths = ["/DCIM", "/Downloads", "/Books", "/Documents", "/Recordings"]
+        max_bytes = int(max_file_size_mb * 1024 * 1024)
 
         try:
             afc = AfcService(self.lockdown)
+        except Exception as e:
             if progress_callback:
-                progress_callback("Scanning DCIM media directory over AFC...", 0.1)
+                progress_callback(f"AFC service unavailable: {e}", 1.0)
+            return metadata_log
 
-            dcim_dir = "/DCIM"
+        all_top_entries: List[Tuple[str, str, str]] = []  # (afc_root, sub_dir, filename)
+
+        for afc_root in afc_paths:
             try:
-                entries = afc.listdir(dcim_dir)
+                top_entries = afc.listdir(afc_root)
             except Exception:
-                entries = []
+                continue  # silently skip unavailable paths
 
-            for idx, entry in enumerate(entries):
+            for entry in top_entries:
                 if entry in (".", ".."):
                     continue
-                sub_path = f"{dcim_dir}/{entry}"
+                sub_path = f"{afc_root}/{entry}"
                 try:
                     sub_files = afc.listdir(sub_path)
                     for f_name in sub_files:
-                        if f_name in (".", ".."):
-                            continue
-                        src = f"{sub_path}/{f_name}"
-                        dest = out_p / entry / f_name
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        data = afc.get_file_contents(src)
-                        dest.write_bytes(data)
-                        pulled[f"{entry}/{f_name}"] = len(data)
+                        if f_name not in (".", ".."):
+                            all_top_entries.append((afc_root, entry, f_name))
                 except Exception:
-                    pass
+                    # entry might itself be a file — treat it directly
+                    all_top_entries.append((afc_root, "", entry))
 
-                if progress_callback and len(entries) > 0:
-                    pct = 0.1 + (0.9 * (idx + 1) / len(entries))
-                    progress_callback(f"Extracted media: {entry}", pct)
+        if progress_callback:
+            progress_callback("Scanning AFC media directories...", 0.1)
 
-        except Exception as e:
-            if progress_callback:
-                progress_callback(f"AFC pull notice: {e}", 1.0)
+        total = len(all_top_entries)
+        for idx, (afc_root, sub_dir, f_name) in enumerate(all_top_entries):
+            ext = Path(f_name).suffix.lower()
+            src = f"{afc_root}/{sub_dir}/{f_name}" if sub_dir else f"{afc_root}/{f_name}"
+            rel_path = f"{afc_root.lstrip('/')}/{sub_dir}/{f_name}" if sub_dir else f"{afc_root.lstrip('/')}/{f_name}"
 
-        return pulled
+            entry_meta: Dict[str, Any] = {
+                "path": rel_path,
+                "size_bytes": 0,
+                "extension": ext,
+                "skipped": False,
+                "skip_reason": None,
+            }
+
+            # Filter: only extract recognised media extensions
+            if ext not in self.MEDIA_EXTENSIONS:
+                entry_meta["skipped"] = True
+                entry_meta["skip_reason"] = f"non-media extension: {ext!r}"
+                metadata_log.append(entry_meta)
+                continue
+
+            try:
+                data = afc.get_file_contents(src)
+            except Exception as exc:
+                entry_meta["skipped"] = True
+                entry_meta["skip_reason"] = f"read error: {exc}"
+                metadata_log.append(entry_meta)
+                continue
+
+            size = len(data)
+            entry_meta["size_bytes"] = size
+
+            # Size guard
+            if size > max_bytes:
+                _log.warning(
+                    "AFC pull: skipping %s (%d bytes > %.0f MB limit)",
+                    src, size, max_file_size_mb,
+                )
+                entry_meta["skipped"] = True
+                entry_meta["skip_reason"] = (
+                    f"file too large ({size} bytes > {max_bytes} bytes)"
+                )
+                metadata_log.append(entry_meta)
+                continue
+
+            # Write file
+            dest = out_p / rel_path.lstrip("/")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+            metadata_log.append(entry_meta)
+
+            if progress_callback and total > 0:
+                pct = 0.1 + 0.9 * (idx + 1) / total
+                progress_callback(f"Extracted: {f_name}", pct)
+
+        if progress_callback:
+            progress_callback("AFC pull complete.", 1.0)
+
+        return metadata_log
 
 
 class BackupPasswordCracker:
@@ -296,12 +364,35 @@ class BackupPasswordCracker:
     Evaluates candidates against the PBKDF2 hash stored in Manifest.plist.
     """
 
+    COMMON_PASSWORDS: List[str] = [
+        "123456", "password", "1234", "apple", "iphone", "backup",
+        "123456789", "qwerty", "abc123", "111111", "123123", "admin",
+        "letmein", "monkey", "dragon", "master", "sunshine", "princess",
+        "shadow", "superman", "michael", "football", "baseball", "soccer",
+        "batman", "login", "welcome", "love", "hello", "trustno1",
+        "secret", "pass", "1234567", "12345678", "0000", "0000000",
+        "1111", "1111111", "password1", "iloveyou", "joshua", "hunter",
+        "ranger", "harley", "access", "007", "bruce", "dallas", "jordan",
+        "cheese", "pepper", "mustang", "maverick", "eagle", "ferrari",
+    ]
+
     def __init__(self, manifest_plist_path: Path | str):
         self.manifest_path = Path(manifest_plist_path).resolve()
         self.salt: bytes = b""
         self.expected_hash: bytes = b""
         self.rounds: int = 52
+        self._tried_count: int = 0
+        self._progress_callback: Optional[Callable] = None
         self._load_manifest()
+
+    @property
+    def tried_count(self) -> int:
+        """Number of password candidates tested so far across all attacks."""
+        return self._tried_count
+
+    def set_progress_callback(self, cb: Callable) -> None:
+        """Register a callback(message: str, count: int) for smart_attack progress."""
+        self._progress_callback = cb
 
     def _load_manifest(self):
         if not self.manifest_path.is_file():
@@ -339,6 +430,40 @@ class BackupPasswordCracker:
             except Exception:
                 pass
         return False
+
+    def smart_attack(self, candidate_list: Optional[List[str]] = None) -> Optional[str]:
+        """
+        Smart dictionary attack:
+        1. Tries built-in COMMON_PASSWORDS first.
+        2. Then tries candidate_list if provided.
+        Reports progress via self._progress_callback(message, count) if set.
+        Returns cracked password or None.
+        """
+        all_candidates: List[str] = list(self.COMMON_PASSWORDS)
+        if candidate_list:
+            all_candidates.extend(candidate_list)
+
+        for candidate in all_candidates:
+            self._tried_count += 1
+            if self._progress_callback:
+                try:
+                    self._progress_callback(
+                        f"Trying password {self._tried_count}: {candidate!r}",
+                        self._tried_count,
+                    )
+                except Exception:
+                    pass
+            if self.try_password(candidate):
+                if self._progress_callback:
+                    try:
+                        self._progress_callback(
+                            f"Password cracked: {candidate!r}", self._tried_count
+                        )
+                    except Exception:
+                        pass
+                return candidate
+
+        return None
 
     def dictionary_attack(
         self,

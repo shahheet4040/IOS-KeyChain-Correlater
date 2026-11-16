@@ -7,15 +7,17 @@ responsive Forensic Investigation Dashboard.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from correlator.case_compare import compare_two_cases
 from correlator.case_manager import CaseManager
 from correlator.consolidated_db import generate_consolidated_database
 from correlator.dump_ingest import detect_dump_format, ingest_and_analyze, normalize_dump_to_extraction
+from correlator.export_formats import export_to_geojson, export_to_jsonl, export_to_xlsx
 from correlator.geospatial import GeoPoint, scan_media_for_gps
 from correlator.pairing import find_pairing_records, match_device_to_pairing
 from correlator.pdf_report import generate_case_pdf
@@ -188,47 +190,41 @@ def download_case_pdf(case_id: str):
         raise HTTPException(status_code=500, detail=f"PDF generation error: {e}")
 
 
-@app.get("/api/cases/{case_id}/consolidated-db")
-def download_case_consolidated_db(case_id: str):
-    """
-    Generates and downloads a single consolidated master SQLite database
-    (consolidated_case_evidence.sqlite) merging all decrypted communications,
-    timeline events, geotagged GPS photos, keyword alerts, and audit trail steps.
-    """
-    try:
-        case_data = case_manager.generate_case_report(case_id)
-        all_res = case_manager.get_analysis_results(case_id)
+def _get_or_create_case_db(case_id: str) -> Tuple[Path, str]:
+    case_data = case_manager.generate_case_report(case_id)
+    all_res = case_manager.get_analysis_results(case_id)
 
-        decrypted_dirs = [
-            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
-            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
-            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
-            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
-            BASE_DIR / "out" / "fake" / "decrypted_export",
-        ]
-        for dev in case_data.get("devices", []):
-            sp = dev.get("source_path")
-            if sp and Path(sp).is_dir():
-                decrypted_dirs.append(Path(sp))
+    decrypted_dirs = [
+        BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+        BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+        BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+        BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+        BASE_DIR / "out" / "fake" / "decrypted_export",
+    ]
+    for dev in case_data.get("devices", []):
+        sp = dev.get("source_path")
+        if sp and Path(sp).is_dir():
+            decrypted_dirs.append(Path(sp))
 
-        media_dirs = [
-            BASE_DIR / "out" / "afc_extracted",
-            BASE_DIR / "out" / "afc_photos",
-            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
-            BASE_DIR / "out" / "real_world_case",
-        ]
+    media_dirs = [
+        BASE_DIR / "out" / "afc_extracted",
+        BASE_DIR / "out" / "afc_photos",
+        BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+        BASE_DIR / "out" / "real_world_case",
+    ]
 
-        prov_steps = []
-        for r in all_res:
-            r_data = r.get("data", {})
-            if "provenance_map" in r_data:
-                prov_steps.extend(r_data["provenance_map"])
+    prov_steps = []
+    for r in all_res:
+        r_data = r.get("data", {})
+        if "provenance_map" in r_data:
+            prov_steps.extend(r_data["provenance_map"])
 
-        export_dir = CASES_DIR / case_id / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
-        safe_num = case_data.get("case_number", "Case").replace("/", "_").replace("\\", "_")
-        db_path = export_dir / f"{safe_num}_consolidated_evidence.sqlite"
+    export_dir = CASES_DIR / case_id / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    safe_num = case_data.get("case_number", "Case").replace("/", "_").replace("\\", "_")
+    db_path = export_dir / f"{safe_num}_consolidated_evidence.sqlite"
 
+    if not db_path.is_file():
         generate_consolidated_database(
             output_path=db_path,
             case_data=case_data,
@@ -237,6 +233,18 @@ def download_case_consolidated_db(case_id: str):
             provenance_steps=prov_steps,
         )
 
+    return db_path, safe_num
+
+
+@app.get("/api/cases/{case_id}/consolidated-db")
+def download_case_consolidated_db(case_id: str):
+    """
+    Generates and downloads a single consolidated master SQLite database
+    (consolidated_case_evidence.sqlite) merging all decrypted communications,
+    timeline events, geotagged GPS photos, keyword alerts, and audit trail steps.
+    """
+    try:
+        db_path, safe_num = _get_or_create_case_db(case_id)
         return FileResponse(
             path=str(db_path),
             media_type="application/vnd.sqlite3",
@@ -246,6 +254,69 @@ def download_case_consolidated_db(case_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Consolidated DB export error: {e}")
+
+
+@app.get("/api/cases/{case_id}/export/xlsx")
+def export_case_xlsx(case_id: str):
+    """Exports case evidence tables into multi-sheet Excel spreadsheet (or CSV zip archive)."""
+    try:
+        db_path, safe_num = _get_or_create_case_db(case_id)
+        out_target = db_path.parent / f"{safe_num}_evidence.xlsx"
+        res = export_to_xlsx(db_path, out_target)
+        actual_path = Path(res["path"])
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if res["format"] == "xlsx" else "application/zip"
+        return FileResponse(path=str(actual_path), media_type=media_type, filename=actual_path.name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"XLSX export failed: {e}")
+
+
+@app.get("/api/cases/{case_id}/export/jsonl")
+def export_case_jsonl(case_id: str):
+    """Streams case evidence records into JSON Lines (NDJSON) format."""
+    try:
+        db_path, safe_num = _get_or_create_case_db(case_id)
+        out_target = db_path.parent / f"{safe_num}_evidence.jsonl"
+        res = export_to_jsonl(db_path, out_target)
+        return FileResponse(path=str(res["path"]), media_type="application/x-ndjson", filename=f"{safe_num}_evidence.jsonl")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"JSONL export failed: {e}")
+
+
+@app.get("/api/cases/{case_id}/export/geojson")
+def export_case_geojson(case_id: str):
+    """Exports case geotags into RFC 7946 GeoJSON FeatureCollection."""
+    try:
+        db_path, safe_num = _get_or_create_case_db(case_id)
+        out_target = db_path.parent / f"{safe_num}_locations.geojson"
+        res = export_to_geojson(db_path, out_target)
+        return FileResponse(path=str(res["path"]), media_type="application/geo+json", filename=f"{safe_num}_locations.geojson")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GeoJSON export failed: {e}")
+
+
+@app.post("/api/cases/compare")
+def compare_cases_endpoint(payload: Dict[str, Any]):
+    """Compares two cases to identify overlapping contacts, nearby GPS waypoints, and shared alert indicators."""
+    case_a = payload.get("case_id_a")
+    case_b = payload.get("case_id_b")
+    if not case_a or not case_b:
+        raise HTTPException(status_code=400, detail="Both case_id_a and case_id_b are required.")
+
+    try:
+        db_a, _ = _get_or_create_case_db(case_a)
+        db_b, _ = _get_or_create_case_db(case_b)
+        result = compare_two_cases(db_a, db_b)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Case comparison failed: {e}")
 
 
 @app.get("/api/cases/{case_id}/provenance")

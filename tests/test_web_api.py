@@ -3,10 +3,14 @@ import plistlib
 import hashlib
 import pytest
 from correlator.web.app import (
+    compare_cases_endpoint,
     crack_backup_password,
     create_case,
     detect_dump,
     download_case_pdf,
+    export_case_geojson,
+    export_case_jsonl,
+    export_case_xlsx,
     get_case_provenance,
     get_geospatial,
     get_pairing_records,
@@ -150,6 +154,48 @@ def test_watchlist_endpoints():
     assert "severity_summary" in scan_res
     assert "category_summary" in scan_res
     assert isinstance(scan_res["alerts"], list)
+
+
+def test_export_formats_endpoints():
+    req = CaseCreateRequest(
+        case_name="Export Web Case",
+        case_number="WEB-EXP-01",
+        examiner="Chief Officer",
+        description="Testing export endpoints",
+    )
+    res = create_case(req)
+    cid = res["case_id"]
+
+    # XLSX / CSV-ZIP
+    x_resp = export_case_xlsx(cid)
+    assert x_resp.status_code == 200
+    assert Path(x_resp.path).is_file()
+
+    # JSONL
+    j_resp = export_case_jsonl(cid)
+    assert j_resp.status_code == 200
+    assert Path(j_resp.path).is_file()
+
+    # GeoJSON
+    g_resp = export_case_geojson(cid)
+    assert g_resp.status_code == 200
+    assert Path(g_resp.path).is_file()
+
+
+def test_case_compare_endpoint():
+    req1 = CaseCreateRequest(case_name="Alpha", case_number="CMP-01", examiner="Officer A")
+    c1 = create_case(req1)["case_id"]
+
+    req2 = CaseCreateRequest(case_name="Beta", case_number="CMP-02", examiner="Officer B")
+    c2 = create_case(req2)["case_id"]
+
+    res = compare_cases_endpoint({"case_id_a": c1, "case_id_b": c2})
+    assert "metadata" in res
+    assert "messages" in res
+    assert "locations" in res
+    assert "alerts" in res
+    assert "timeline" in res
+
 
 
 

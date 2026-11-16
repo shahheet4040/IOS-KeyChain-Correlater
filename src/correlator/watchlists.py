@@ -78,6 +78,25 @@ def _luhn_check(pan: str) -> bool:
     return (checksum % 10) == 0
 
 
+def scan_speed_stats() -> Dict[str, int]:
+    """Returns quick statistics about the loaded watchlist patterns."""
+    patterns_total = sum(len(v) for v in PATTERNS.values())
+    return {
+        "patterns_total": patterns_total,
+        "categories_count": len(PATTERNS),
+    }
+
+
+# Non-text SQLite declared types that should be skipped for string pattern matching
+_SKIP_TYPE_FRAGMENTS = ("INT", "REAL", "BLOB", "NUMERIC")
+
+
+def _is_text_column(declared_type: str) -> bool:
+    """Return True only for TEXT/VARCHAR-ish columns; False for numeric/blob types."""
+    t = declared_type.upper()
+    return not any(frag in t for frag in _SKIP_TYPE_FRAGMENTS)
+
+
 def scan_database_for_alerts(
     db_path: Path,
     custom_keywords: Optional[List[str]] = None,
@@ -103,60 +122,73 @@ def scan_database_for_alerts(
 
         for tbl in tables:
             try:
-                cur.execute(f'SELECT * FROM "{tbl}" LIMIT 500;')
-                col_names = [d[0] for d in cur.description] if cur.description else []
-                rows = cur.fetchall()
+                # --- COLUMN TYPE FILTERING via PRAGMA table_info ---
+                info_cur = con.cursor()
+                info_cur.execute(f'PRAGMA table_info("{tbl}");')
+                col_info = info_cur.fetchall()
+                # col_info rows: (cid, name, type, notnull, dflt_value, pk)
+                # Build a set of column indices that are text-scannable
+                text_col_indices = {
+                    row[0] for row in col_info
+                    if _is_text_column(row[2])  # row[2] is declared type
+                }
+                col_names = [row[1] for row in col_info]
 
-                for row_idx, row in enumerate(rows):
-                    row_dict = {col_names[i]: str(v) if v is not None else None for i, v in enumerate(row)}
+                if not col_names:
+                    continue
 
-                    for c_idx, cell in enumerate(row):
-                        if cell is None:
-                            continue
-                        text = str(cell).strip()
-                        if len(text) < 3:
-                            continue
+                # Build SELECT with only text columns for efficiency, but fetch
+                # the full row for context. We select * and filter by index.
+                scan_cur = con.cursor()
+                scan_cur.execute(f'SELECT * FROM "{tbl}";')
 
-                        # 1. Custom Keywords
-                        if custom_regex:
-                            m = custom_regex.search(text)
-                            if m:
-                                matched_str = m.group(0)
-                                start = max(0, m.start() - 30)
-                                end = min(len(text), m.end() + 30)
-                                snippet = ("..." if start > 0 else "") + text[start:end] + ("..." if end < len(text) else "")
+                # --- BATCH READS: fetchmany(500) ---
+                while True:
+                    rows = scan_cur.fetchmany(500)
+                    if not rows:
+                        break
 
-                                alerts.append(WatchlistAlert(
-                                    alert_id=f"ALT-CUST-{len(alerts)+1}",
-                                    category="Custom Watchlist",
-                                    matched_term=matched_str,
-                                    severity="HIGH",
-                                    database_name=p.name,
-                                    table_name=tbl,
-                                    column_name=col_names[c_idx],
-                                    context_snippet=snippet,
-                                    row_data=row_dict,
-                                ))
+                    for row in rows:
+                        # --- EARLY-EXIT PER ROW ---
+                        if len(alerts) >= max_alerts_per_db:
+                            con.close()
+                            return alerts
 
-                        # 2. Built-in Categories
-                        for category, pattern_list in PATTERNS.items():
-                            for regex, label, severity in pattern_list:
-                                match = regex.search(text)
-                                if match:
-                                    matched_val = match.group(0)
-                                    # Validate PAN if credit card
-                                    if "Credit Card" in label and not _luhn_check(matched_val):
-                                        continue
+                        row_dict = {col_names[i]: str(v) if v is not None else None
+                                    for i, v in enumerate(row)}
 
-                                    start = max(0, match.start() - 30)
-                                    end = min(len(text), match.end() + 30)
+                        for c_idx, cell in enumerate(row):
+                            # --- EARLY-EXIT inner loop ---
+                            if len(alerts) >= max_alerts_per_db:
+                                con.close()
+                                return alerts
+
+                            # --- COLUMN TYPE FILTERING ---
+                            if c_idx not in text_col_indices:
+                                continue
+
+                            if cell is None:
+                                continue
+                            text = str(cell).strip()
+
+                            # --- TEXT LENGTH FILTER ---
+                            if len(text) < 8 or len(text) > 50000:
+                                continue
+
+                            # 1. Custom Keywords
+                            if custom_regex:
+                                m = custom_regex.search(text)
+                                if m:
+                                    matched_str = m.group(0)
+                                    start = max(0, m.start() - 30)
+                                    end = min(len(text), m.end() + 30)
                                     snippet = ("..." if start > 0 else "") + text[start:end] + ("..." if end < len(text) else "")
 
                                     alerts.append(WatchlistAlert(
-                                        alert_id=f"ALT-{category[:3].upper()}-{len(alerts)+1}",
-                                        category=category,
-                                        matched_term=f"{label}: {matched_val}",
-                                        severity=severity,
+                                        alert_id=f"ALT-CUST-{len(alerts)+1}",
+                                        category="Custom Watchlist",
+                                        matched_term=matched_str,
+                                        severity="HIGH",
                                         database_name=p.name,
                                         table_name=tbl,
                                         column_name=col_names[c_idx],
@@ -164,9 +196,35 @@ def scan_database_for_alerts(
                                         row_data=row_dict,
                                     ))
 
-                                    if len(alerts) >= max_alerts_per_db:
-                                        con.close()
-                                        return alerts
+                            # 2. Built-in Categories
+                            for category, pattern_list in PATTERNS.items():
+                                for regex, label, severity in pattern_list:
+                                    match = regex.search(text)
+                                    if match:
+                                        matched_val = match.group(0)
+                                        # Validate PAN if credit card
+                                        if "Credit Card" in label and not _luhn_check(matched_val):
+                                            continue
+
+                                        start = max(0, match.start() - 30)
+                                        end = min(len(text), match.end() + 30)
+                                        snippet = ("..." if start > 0 else "") + text[start:end] + ("..." if end < len(text) else "")
+
+                                        alerts.append(WatchlistAlert(
+                                            alert_id=f"ALT-{category[:3].upper()}-{len(alerts)+1}",
+                                            category=category,
+                                            matched_term=f"{label}: {matched_val}",
+                                            severity=severity,
+                                            database_name=p.name,
+                                            table_name=tbl,
+                                            column_name=col_names[c_idx],
+                                            context_snippet=snippet,
+                                            row_data=row_dict,
+                                        ))
+
+                                        if len(alerts) >= max_alerts_per_db:
+                                            con.close()
+                                            return alerts
             except Exception:
                 continue
 

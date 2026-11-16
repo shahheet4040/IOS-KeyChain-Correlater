@@ -125,6 +125,45 @@ def init_consolidated_schema(con: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_locations_epoch ON locations(timestamp_epoch);
         CREATE INDEX IF NOT EXISTS idx_alerts_category ON keyword_alerts(category);
         CREATE INDEX IF NOT EXISTS idx_alerts_severity ON keyword_alerts(severity);
+
+        CREATE TABLE IF NOT EXISTS contacts (
+            contact_id TEXT PRIMARY KEY,
+            name TEXT,
+            phone_number TEXT,
+            email TEXT,
+            organization TEXT,
+            source_app TEXT,
+            last_seen_utc TEXT,
+            message_count INTEGER,
+            first_seen_utc TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS app_artifacts (
+            artifact_id TEXT PRIMARY KEY,
+            app_name TEXT,
+            artifact_type TEXT,
+            artifact_key TEXT,
+            artifact_value TEXT,
+            source_database TEXT,
+            source_table TEXT,
+            discovered_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS file_registry (
+            file_id TEXT PRIMARY KEY,
+            file_name TEXT,
+            file_path TEXT,
+            file_size_bytes INTEGER,
+            sha256_hash TEXT,
+            mime_type TEXT,
+            extracted_via TEXT,
+            extracted_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_number);
+        CREATE INDEX IF NOT EXISTS idx_contacts_app ON contacts(source_app);
+        CREATE INDEX IF NOT EXISTS idx_artifacts_app ON app_artifacts(app_name);
+        CREATE INDEX IF NOT EXISTS idx_files_hash ON file_registry(sha256_hash);
     """)
     con.commit()
 
@@ -310,6 +349,7 @@ def generate_consolidated_database(
 
     # 6. Inspect & Register Decrypted Databases Found
     db_rows = []
+    file_registry_rows = []
     for s_dir in search_dirs:
         for db_file in s_dir.glob("*.sqlite"):
             try:
@@ -327,6 +367,7 @@ def generate_consolidated_database(
                 sub_con.close()
 
                 sha = hashlib.sha256(db_file.read_bytes()).hexdigest()
+                file_size = db_file.stat().st_size
                 db_rows.append((
                     db_file.name,
                     str(db_file),
@@ -337,12 +378,27 @@ def generate_consolidated_database(
                     total_rows,
                     sha,
                 ))
+                # Also register in file_registry
+                file_registry_rows.append((
+                    sha,  # file_id = sha256 (unique per content)
+                    db_file.name,
+                    str(db_file),
+                    file_size,
+                    sha,
+                    "application/vnd.sqlite3",
+                    "decryption",
+                    now_utc,
+                ))
             except Exception:
                 continue
 
     cur.executemany("""
         INSERT OR REPLACE INTO decrypted_databases VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, db_rows)
+
+    cur.executemany("""
+        INSERT OR REPLACE INTO file_registry VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, file_registry_rows)
 
     con.commit()
     con.close()
