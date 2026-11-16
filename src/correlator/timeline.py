@@ -58,7 +58,7 @@ def _format_epoch(epoch_seconds: float) -> str:
 def extract_whatsapp_events(db_path: Path) -> List[TimelineEvent]:
     events = []
     try:
-        con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 
@@ -108,7 +108,7 @@ def extract_whatsapp_events(db_path: Path) -> List[TimelineEvent]:
 def extract_signal_events(db_path: Path) -> List[TimelineEvent]:
     events = []
     try:
-        con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 
@@ -166,7 +166,7 @@ def extract_signal_events(db_path: Path) -> List[TimelineEvent]:
 def extract_wechat_events(db_path: Path) -> List[TimelineEvent]:
     events = []
     try:
-        con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 
@@ -213,7 +213,7 @@ def extract_wechat_events(db_path: Path) -> List[TimelineEvent]:
 def extract_safari_events(db_path: Path) -> List[TimelineEvent]:
     events = []
     try:
-        con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 

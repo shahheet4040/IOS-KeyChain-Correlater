@@ -115,7 +115,7 @@ def scan_database_for_alerts(
             custom_regex = re.compile(r"\b(" + "|".join(escaped) + r")\b", re.I)
 
     try:
-        con = sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{p.resolve().as_uri()}?mode=ro", uri=True)
         cur = con.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
         tables = [r[0] for r in cur.fetchall()]

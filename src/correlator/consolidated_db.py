@@ -353,7 +353,7 @@ def generate_consolidated_database(
     for s_dir in search_dirs:
         for db_file in s_dir.glob("*.sqlite"):
             try:
-                sub_con = sqlite3.connect(f"file:{db_file.as_posix()}?mode=ro", uri=True)
+                sub_con = sqlite3.connect(f"{db_file.resolve().as_uri()}?mode=ro", uri=True)
                 sub_cur = sub_con.cursor()
                 tables = sub_cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
                 # calculate simple row count across user tables

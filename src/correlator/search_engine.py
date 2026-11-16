@@ -69,7 +69,7 @@ def search_sqlite_files(
 
         rel_path = str(db_path.relative_to(root_dir))
         try:
-            con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+            con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
             cur = con.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
             tables = [r[0] for r in cur.fetchall()]
@@ -153,7 +153,7 @@ def search_by_date_range(
             break
         rel_path = str(db_path.relative_to(root_dir))
         try:
-            con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+            con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
             cur = con.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
             tables = [r[0] for r in cur.fetchall()]

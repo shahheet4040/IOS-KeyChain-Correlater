@@ -97,7 +97,7 @@ def scan_entities_in_evidence(
 
     # 1. From Consolidated DB
     if consolidated_db_path and Path(consolidated_db_path).is_file():
-        con = sqlite3.connect(f"file:{Path(consolidated_db_path).resolve().as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{Path(consolidated_db_path).resolve().as_uri()}?mode=ro", uri=True)
         cur = con.cursor()
         try:
             cur.execute("SELECT app, content FROM messages WHERE content IS NOT NULL LIMIT 5000")

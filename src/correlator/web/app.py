@@ -668,7 +668,7 @@ def list_database_tables(db_path: str):
         raise HTTPException(status_code=400, detail="Database file not found.")
 
     try:
-        con = sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{p.resolve().as_uri()}?mode=ro", uri=True)
         cur = con.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
         tables_info = []
@@ -694,7 +694,7 @@ def get_table_rows(db_path: str, table: str, limit: int = 500, offset: int = 0):
         raise HTTPException(status_code=400, detail="Database file not found.")
 
     try:
-        con = sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{p.resolve().as_uri()}?mode=ro", uri=True)
         cur = con.cursor()
         cur.execute(f'SELECT * FROM "{table}" LIMIT ? OFFSET ?;', (limit, offset))
         cols = [d[0] for d in cur.description] if cur.description else []

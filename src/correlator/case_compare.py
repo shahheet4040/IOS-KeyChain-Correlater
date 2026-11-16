@@ -22,11 +22,11 @@ class CaseComparison:
         self.db_path_a = str(Path(db_path_a).resolve())
         self.db_path_b = str(Path(db_path_b).resolve())
         self._con_a = sqlite3.connect(
-            f"file:{Path(db_path_a).resolve().as_posix()}?mode=ro", uri=True
+            f"{Path(db_path_a).resolve().as_uri()}?mode=ro", uri=True
         )
         self._con_a.row_factory = sqlite3.Row
         self._con_b = sqlite3.connect(
-            f"file:{Path(db_path_b).resolve().as_posix()}?mode=ro", uri=True
+            f"{Path(db_path_b).resolve().as_uri()}?mode=ro", uri=True
         )
         self._con_b.row_factory = sqlite3.Row
 

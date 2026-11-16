@@ -247,7 +247,7 @@ class CaseManager:
                     continue
 
                 try:
-                    con = sqlite3.connect(f"file:{db_file.resolve().as_posix()}?mode=ro", uri=True)
+                    con = sqlite3.connect(f"{db_file.resolve().as_uri()}?mode=ro", uri=True)
                     cur = con.cursor()
                     cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
                     tables = [r[0] for r in cur.fetchall()]

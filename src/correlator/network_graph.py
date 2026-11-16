@@ -69,7 +69,7 @@ def build_network_graph(
 
     # 1. Try reading from consolidated database if provided
     if consolidated_db_path and Path(consolidated_db_path).is_file():
-        con = sqlite3.connect(f"file:{Path(consolidated_db_path).resolve().as_posix()}?mode=ro", uri=True)
+        con = sqlite3.connect(f"{Path(consolidated_db_path).resolve().as_uri()}?mode=ro", uri=True)
         cur = con.cursor()
         try:
             cur.execute("""

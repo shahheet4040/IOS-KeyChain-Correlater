@@ -504,7 +504,7 @@ class ForensicCorrelatorGUI:
 
         db_path = self.accessible_databases[selected_name]
         try:
-            con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+            con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
             cur = con.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
             tables = [row[0] for row in cur.fetchall()]
@@ -529,7 +529,7 @@ class ForensicCorrelatorGUI:
 
         db_path = self.accessible_databases[db_name]
         try:
-            con = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+            con = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
             cur = con.cursor()
             cur.execute(f'SELECT * FROM "{table_name}" LIMIT 500;')
             col_names = [d[0] for d in cur.description] if cur.description else []
@@ -793,7 +793,7 @@ class ForensicCorrelatorGUI:
             # If accessible databases exist, sample a few message snippets
             for db_name, p in list(self.accessible_databases.items())[:3]:
                 try:
-                    con = sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True)
+                    con = sqlite3.connect(f"{p.resolve().as_uri()}?mode=ro", uri=True)
                     cur = con.cursor()
                     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 3;")
                     tables = [row[0] for row in cur.fetchall()]
