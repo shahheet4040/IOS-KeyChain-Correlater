@@ -43,8 +43,22 @@ jobs:
           python harness/make_fake_extraction.py --out out/fake
 
       - name: Run Pytest Forensic Test Suite
+        id: run_pytest
+        shell: bash
         run: |
-          pytest -v tests/
+          python -m pytest -v tests/ --tb=short 2>&1 | tee test_results.log
+
+      - name: Report Pytest Failures in Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### Forensic Test Suite Output (${{ matrix.os }} / Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          tail -n 80 test_results.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.run_pytest.outcome }}" != "success" ]; then
+            exit 1
+          fi
 
       - name: Verify CLI Ingestion & Decryption Pipeline
         run: |
