@@ -26,11 +26,17 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install System Dependencies (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
-          python -m pip install --upgrade pip
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libsqlcipher-dev libssl-dev
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install pytest anyio cryptography pydantic fastapi uvicorn reportlab openpyxl Pillow
           pip install -e .
-          pip install pytest anyio fastapi uvicorn reportlab
 
       - name: Run Pytest Forensic Test Suite
         run: |

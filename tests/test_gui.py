@@ -1,12 +1,18 @@
-import tkinter as tk
 import pytest
 from pathlib import Path
 
-from correlator.gui import ForensicCorrelatorGUI
+try:
+    import tkinter as tk
+    from correlator.gui import ForensicCorrelatorGUI
+    HAS_TKINTER = True
+except Exception:
+    HAS_TKINTER = False
 
 
 def test_gui_instantiation():
     """Verify that the GUI window initializes components cleanly."""
+    if not HAS_TKINTER:
+        pytest.skip("Tkinter is not available in this environment")
     try:
         root = tk.Tk()
     except Exception as e:

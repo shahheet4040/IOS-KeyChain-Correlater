@@ -10,6 +10,13 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "sqlcipher3>=0.6.5",
+    "cryptography>=41.0.0",
+    "pydantic>=2.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "reportlab>=3.6.0",
+    "openpyxl>=3.0.0",
+    "Pillow>=9.0.0",
 ]
 
 [project.scripts]
