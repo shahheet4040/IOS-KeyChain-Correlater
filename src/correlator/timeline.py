@@ -139,7 +139,7 @@ def extract_signal_events(db_path: Path) -> List[TimelineEvent]:
             if not body_text.strip():
                 continue
 
-            author = str(row["author_id"]) if "author_id" in cols else "Participant"
+            author = str(row["author_id"]) if "author_id" in cols else (str(row["sender"]) if "sender" in cols else "Participant")
             recipient = str(row["conversation_id"]) if "conversation_id" in cols else "Chat"
 
             events.append(TimelineEvent(

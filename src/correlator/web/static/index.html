@@ -887,7 +887,12 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">🔓 Browse Decrypted Evidence & Tables</div>
-                        <button class="btn btn-secondary" onclick="loadExplorerDatabases()">🔄 Refresh Databases</button>
+                        <div style="display:flex;gap:8px;">
+                            <a href="/api/export/consolidated-db" class="btn btn-secondary" style="background:#1e3a8a;border:1px solid #3b82f6;text-decoration:none;display:inline-flex;align-items:center;gap:4px;font-size:0.8rem;padding:6px 12px;" title="Export Unified Consolidated SQLite Master Database">
+                                💾 Export Master SQLite DB
+                            </a>
+                            <button class="btn btn-secondary" onclick="loadExplorerDatabases()">🔄 Refresh Databases</button>
+                        </div>
                     </div>
                     <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
                         Inspect recovered chats, contacts, browsing history, and database records directly in the web application.
@@ -1247,6 +1252,12 @@
                                         <td>Pristine plaintext databases (Signal, WhatsApp, Safari) readable by DB Browser or any forensic suite.</td>
                                     </tr>
                                     <tr>
+                                        <td><strong>Consolidated Master SQLite DB</strong></td>
+                                        <td><code>cases_workspace/.../exports/*.sqlite</code></td>
+                                        <td>Single SQLite File (<code>.sqlite</code>)</td>
+                                        <td>Unified master database combining all messages, timeline events, GPS waypoints, keyword alerts, and audit logs.</td>
+                                    </tr>
+                                    <tr>
                                         <td><strong>Case Registry</strong></td>
                                         <td><code>cases_workspace/cases/&lt;case-id&gt;/</code></td>
                                         <td>JSON (<code>case_meta.json</code>)</td>
@@ -1449,6 +1460,9 @@
                             <div style="display:flex;gap:6px;align-items:center;">
                                 <a href="/api/cases/${c.case_id}/pdf" target="_blank" class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:3px;">
                                     📄 PDF
+                                </a>
+                                <a href="/api/cases/${c.case_id}/consolidated-db" class="btn btn-secondary" style="padding:4px 8px;font-size:0.75rem;text-decoration:none;display:inline-flex;align-items:center;gap:3px;background:#1e3a8a;border:1px solid #3b82f6;" title="Download Unified Consolidated SQLite Master Database">
+                                    💾 Master DB
                                 </a>
                                 <button class="btn btn-secondary" style="padding:4px 8px;font-size:0.75rem;" onclick="loadCaseProvenance('${c.case_id}')">
                                     🗺️ Map

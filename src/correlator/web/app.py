@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from correlator.case_manager import CaseManager
+from correlator.consolidated_db import generate_consolidated_database
 from correlator.dump_ingest import detect_dump_format, ingest_and_analyze, normalize_dump_to_extraction
 from correlator.geospatial import GeoPoint, scan_media_for_gps
 from correlator.pairing import find_pairing_records, match_device_to_pairing
@@ -185,6 +186,66 @@ def download_case_pdf(case_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation error: {e}")
+
+
+@app.get("/api/cases/{case_id}/consolidated-db")
+def download_case_consolidated_db(case_id: str):
+    """
+    Generates and downloads a single consolidated master SQLite database
+    (consolidated_case_evidence.sqlite) merging all decrypted communications,
+    timeline events, geotagged GPS photos, keyword alerts, and audit trail steps.
+    """
+    try:
+        case_data = case_manager.generate_case_report(case_id)
+        all_res = case_manager.get_analysis_results(case_id)
+
+        decrypted_dirs = [
+            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "fake" / "decrypted_export",
+        ]
+        for dev in case_data.get("devices", []):
+            sp = dev.get("source_path")
+            if sp and Path(sp).is_dir():
+                decrypted_dirs.append(Path(sp))
+
+        media_dirs = [
+            BASE_DIR / "out" / "afc_extracted",
+            BASE_DIR / "out" / "afc_photos",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "real_world_case",
+        ]
+
+        prov_steps = []
+        for r in all_res:
+            r_data = r.get("data", {})
+            if "provenance_map" in r_data:
+                prov_steps.extend(r_data["provenance_map"])
+
+        export_dir = CASES_DIR / case_id / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        safe_num = case_data.get("case_number", "Case").replace("/", "_").replace("\\", "_")
+        db_path = export_dir / f"{safe_num}_consolidated_evidence.sqlite"
+
+        generate_consolidated_database(
+            output_path=db_path,
+            case_data=case_data,
+            decrypted_dirs=decrypted_dirs,
+            media_dirs=media_dirs,
+            provenance_steps=prov_steps,
+        )
+
+        return FileResponse(
+            path=str(db_path),
+            media_type="application/vnd.sqlite3",
+            filename=f"{safe_num}_consolidated_evidence.sqlite",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Consolidated DB export error: {e}")
 
 
 @app.get("/api/cases/{case_id}/provenance")
@@ -735,6 +796,50 @@ def match_pairing(payload: PairingDeviceCheck):
     if match:
         return {"matched": True, "record": match}
     return {"matched": False, "record": None}
+
+
+# ── Consolidated Master Database Routes ──────────────────────────────
+
+@app.get("/api/export/consolidated-db")
+def export_general_consolidated_db(directory: Optional[str] = None):
+    """Generates and downloads a consolidated master SQLite database for the workstation evidence."""
+    search_dirs = []
+    if directory and Path(directory).is_dir():
+        search_dirs.append(Path(directory).resolve())
+    else:
+        for sub in [
+            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "fake" / "decrypted_export",
+        ]:
+            if sub.is_dir() and sub not in search_dirs:
+                search_dirs.append(sub)
+
+    media_dirs = [
+        BASE_DIR / "out" / "afc_extracted",
+        BASE_DIR / "out" / "afc_photos",
+        BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+        BASE_DIR / "out" / "real_world_case",
+    ]
+
+    out_dir = BASE_DIR / "out" / "consolidated_exports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    db_path = out_dir / "consolidated_case_evidence.sqlite"
+
+    generate_consolidated_database(
+        output_path=db_path,
+        case_data={"case_name": "General Evidence Consolidation", "case_number": "GEN/2026/001"},
+        decrypted_dirs=search_dirs,
+        media_dirs=media_dirs,
+    )
+
+    return FileResponse(
+        path=str(db_path),
+        media_type="application/vnd.sqlite3",
+        filename="consolidated_case_evidence.sqlite",
+    )
 
 
 # ── Web UI Dashboard Root ────────────────────────────────────────────
