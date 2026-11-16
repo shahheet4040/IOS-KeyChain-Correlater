@@ -66,3 +66,19 @@ class SearchHitResponse(BaseModel):
 
 class PairingDeviceCheck(BaseModel):
     udid: str = Field(..., description="UDID of target device")
+
+
+class DeviceTriageRequest(BaseModel):
+    udid: str = Field(..., description="UDID of connected device to triage")
+
+
+class AfcPullRequest(BaseModel):
+    udid: Optional[str] = Field(None, description="Target device UDID (optional if single device)")
+    output_dir: Optional[str] = Field(None, description="Directory to save extracted media")
+
+
+class CrackBackupRequest(BaseModel):
+    manifest_path: str = Field(..., description="Path to Manifest.plist of encrypted iOS backup")
+    wordlist_path: Optional[str] = Field(None, description="Path to candidate password dictionary")
+    candidate_passwords: Optional[List[str]] = Field(None, description="Direct list of password strings to test")
+

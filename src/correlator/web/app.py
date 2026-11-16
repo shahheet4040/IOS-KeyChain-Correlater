@@ -16,11 +16,15 @@ from fastapi.staticfiles import StaticFiles
 from correlator.case_manager import CaseManager
 from correlator.dump_ingest import detect_dump_format, ingest_and_analyze, normalize_dump_to_extraction
 from correlator.pairing import find_pairing_records, match_device_to_pairing
+from correlator.pdf_report import generate_case_pdf
 from correlator.pipeline import execute_pipeline
 from correlator.search_engine import export_search_results, generate_search_report_html, search_sqlite_files
 from correlator.web.schemas import (
+    AfcPullRequest,
     CaseCreateRequest,
+    CrackBackupRequest,
     DeviceAddRequest,
+    DeviceTriageRequest,
     IngestDumpRequest,
     PairingDeviceCheck,
     RunAnalysisRequest,
@@ -120,7 +124,56 @@ def get_case_consolidated_report(case_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
-# ── Live USB Acquisition Routes ──────────────────────────────────────
+@app.get("/api/cases/{case_id}/pdf")
+def download_case_pdf(case_id: str):
+    """
+    Generates and downloads a court-ready, publication-grade PDF report
+    containing complete case details, inventory, decrypted databases, and evidence records.
+    """
+    try:
+        case_data = case_manager.generate_case_report(case_id)
+        # Augment with detailed databases from all device analysis runs
+        all_res = case_manager.get_analysis_results(case_id)
+        dbs = []
+        for r in all_res:
+            r_data = r.get("data", {})
+            for db in r_data.get("databases", []):
+                dbs.append(db)
+        case_data["databases"] = dbs
+
+        # Collect sample evidence rows from cross-device search
+        samples = []
+        try:
+            hits = case_manager.cross_device_search(case_id, " ")
+            for h in hits[:25]:
+                samples.append({
+                    "database": h.get("db_name", "evidence.sqlite"),
+                    "table": h.get("table", "messages"),
+                    "column": h.get("column", "body"),
+                    "snippet": h.get("matched_value", "")[:75],
+                })
+        except Exception:
+            pass
+        case_data["evidence_samples"] = samples
+
+        pdf_dir = CASES_DIR / case_id / "reports"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        safe_num = case_data.get("case_number", "Case").replace("/", "_").replace("\\", "_")
+        pdf_path = pdf_dir / f"{safe_num}_Forensic_Report.pdf"
+        generate_case_pdf(case_data, pdf_path)
+
+        return FileResponse(
+            path=str(pdf_path),
+            media_type="application/pdf",
+            filename=f"{safe_num}_Official_Forensic_Report.pdf",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation error: {e}")
+
+
+# ── Live USB Acquisition & Triage Routes ─────────────────────────────
 
 @app.get("/api/usb/status")
 def get_usb_status():
@@ -133,6 +186,131 @@ def get_usb_status():
         "acquisition_module_available": available,
         "usbmuxd_service_running": usbmux_active,
         "connected_devices": devices,
+    }
+
+
+@app.post("/api/usb/triage")
+def triage_device(payload: DeviceTriageRequest):
+    """
+    Evaluates USB pairing state and device lock state (AFU vs BFU)
+    to determine exact forensic AccessTier.
+    """
+    from correlator.acquisition import BackupAccessResolver, _get_lockdown_client, is_usbmuxd_running
+    try:
+        client = None
+        if is_usbmuxd_running():
+            try:
+                client = _get_lockdown_client(payload.udid)
+            except Exception:
+                pass
+        resolver = BackupAccessResolver(payload.udid, client)
+        tier, meta = resolver.resolve()
+        return {
+            "udid": payload.udid,
+            "access_tier": tier.value,
+            "lock_state": meta.get("lock_state", "UNKNOWN"),
+            "paired": meta.get("paired", False),
+            "password_set": meta.get("password_set", False),
+            "recommendation": (
+                "FULL LOGICAL EXTRACTION: Ready for immediate password-free acquisition."
+                if tier.value == "full_backup"
+                else "PARTIAL EXTRACTION: Device has backup password. Use AFC Media Fallback or Password Dictionary Cracker."
+                if tier.value == "encrypted_unknown"
+                else "BFU SEALED: Device requires passcode entry to unseal keybag."
+                if tier.value == "bfu_locked"
+                else "UNPAIRED: Device requires user interaction to establish lockdown trust."
+            ),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/usb/afc-pull")
+def pull_afc_media(payload: AfcPullRequest):
+    """
+    Pulls DCIM photos, voice memos, and crash logs over AFC
+    without requiring the device passcode or backup password.
+    """
+    from correlator.acquisition import PasswordFreeBackup, _get_lockdown_client, list_connected_devices
+    target_udid = payload.udid
+    if not target_udid:
+        devs = list_connected_devices()
+        if not devs:
+            raise HTTPException(status_code=400, detail="No iOS device connected over USB.")
+        target_udid = devs[0]["udid"]
+
+    out_p = Path(payload.output_dir).resolve() if payload.output_dir else (BASE_DIR / "out" / "afc_extracted" / target_udid)
+    out_p.mkdir(parents=True, exist_ok=True)
+
+    try:
+        client = _get_lockdown_client(target_udid)
+        backup_agent = PasswordFreeBackup(client, target_udid)
+        pulled = backup_agent.partial_afc_pull(out_p)
+        return {
+            "success": True,
+            "udid": target_udid,
+            "output_directory": str(out_p),
+            "total_files_extracted": len(pulled),
+            "extracted_files": list(pulled.keys())[:100],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AFC extraction failed: {e}")
+
+
+@app.post("/api/backup/crack")
+def crack_backup_password(payload: CrackBackupRequest):
+    """
+    Evaluates password candidates against PBKDF2 hash in Manifest.plist.
+    Recovers access for ENCRYPTED_UNKNOWN backups.
+    """
+    from correlator.acquisition import BackupPasswordCracker
+    manifest_p = Path(payload.manifest_path).resolve()
+    if not manifest_p.is_file():
+        raise HTTPException(status_code=400, detail="Manifest.plist not found at specified path.")
+
+    cracker = BackupPasswordCracker(manifest_p)
+    if not cracker.salt or not cracker.expected_hash:
+        return {
+            "cracked": False,
+            "reason": "Manifest.plist does not contain PasswordHash / PasswordSalt (unencrypted backup).",
+            "password": None,
+        }
+
+    # 1. Test direct candidates if provided
+    candidates = payload.candidate_passwords or []
+    # Add top forensic dictionary defaults if no custom wordlist
+    if not candidates and not payload.wordlist_path:
+        candidates = [
+            "1234", "0000", "123456", "password", "apple", "iphone",
+            "1111", "1212", "qwerty", "12345678", "admin", "12345",
+        ]
+
+    for cand in candidates:
+        if cracker.try_password(cand):
+            return {
+                "cracked": True,
+                "password": cand,
+                "method": "candidate_list",
+                "rounds": cracker.rounds,
+            }
+
+    # 2. Test wordlist if provided
+    if payload.wordlist_path:
+        w_path = Path(payload.wordlist_path).resolve()
+        if w_path.is_file():
+            found = cracker.dictionary_attack(w_path)
+            if found:
+                return {
+                    "cracked": True,
+                    "password": found,
+                    "method": "dictionary_wordlist",
+                    "rounds": cracker.rounds,
+                }
+
+    return {
+        "cracked": False,
+        "password": None,
+        "message": "Tested candidates exhausted without a cryptographic match.",
     }
 
 

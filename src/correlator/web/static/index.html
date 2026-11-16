@@ -241,6 +241,7 @@
         <nav class="nav-menu">
             <div class="nav-item active" onclick="switchView('overview')">📊 Overview Dashboard</div>
             <div class="nav-item" onclick="switchView('cases')">📁 Case Management</div>
+            <div class="nav-item" onclick="switchView('triage')">⚡ Live USB & Recovery</div>
             <div class="nav-item" onclick="switchView('ingest')">📦 Dump Ingestion</div>
             <div class="nav-item" onclick="switchView('analysis')">⚡ Manual Correlation</div>
             <div class="nav-item" onclick="switchView('explorer')">🔓 Browse Decrypted Data</div>
@@ -335,12 +336,73 @@
                                     <th>Examiner</th>
                                     <th>Devices</th>
                                     <th>Status</th>
+                                    <th>Official Report</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="6" style="text-align:center;">Loading cases...</td></tr>
+                                <tr><td colspan="7" style="text-align:center;">Loading cases...</td></tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.5 LIVE USB TRIAGE & PASSWORD RECOVERY VIEW -->
+            <div id="view-triage" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">⚡ Live USB Forensic Triage & Access Tiers</div>
+                        <button class="btn btn-secondary" onclick="loadTriage()">🔄 Rescan USB</button>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Instant hardware triage via lockdown & usbmuxd. Assesses pairing certificates, BFU/AFU lock state, and backup encryption status without requiring screen interaction.
+                    </p>
+                    <div id="triage-devices-container">
+                        <div style="padding:20px;text-align:center;color:var(--text-muted);">
+                            Scanning connected USB devices and pairing records...
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                    <!-- AFC Photo Fallback -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📷 AFC Media & Photo Fallback</div>
+                        </div>
+                        <p style="color:var(--text-muted);font-size:0.85em;margin-bottom:12px;">
+                            For <strong>ENCRYPTED_UNKNOWN</strong> devices: AFC (Apple File Conduit) extracts <code>/DCIM</code> camera photos, voice memos, and crash logs without needing the unknown backup password.
+                        </p>
+                        <div class="form-group">
+                            <label class="form-label">Target UDID (Optional if 1 device connected)</label>
+                            <input type="text" id="afc-udid" class="form-input" placeholder="e.g. 00008101-001234567890001E">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Extraction Output Directory</label>
+                            <input type="text" id="afc-out" class="form-input" placeholder="Default: ./out/afc_extracted/">
+                        </div>
+                        <button class="btn btn-primary" id="btn-afc-pull" onclick="runAfcPull()">🚀 Start AFC Photo Extraction</button>
+                        <div id="afc-log" class="console-box" style="margin-top:12px;height:120px;display:none;"></div>
+                    </div>
+
+                    <!-- Backup Password Recovery -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🔑 Backup Password Dictionary Cracker</div>
+                        </div>
+                        <p style="color:var(--text-muted);font-size:0.85em;margin-bottom:12px;">
+                            Evaluates candidate passwords against PBKDF2 HMAC-SHA256 hash in <code>Manifest.plist</code>. Recovers full logical access for encrypted backups.
+                        </p>
+                        <div class="form-group">
+                            <label class="form-label">Manifest.plist Path</label>
+                            <input type="text" id="crack-manifest" class="form-input" placeholder="C:\path\to\backup\Manifest.plist">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Custom Wordlist Path (Leave blank for Top Forensic Defaults)</label>
+                            <input type="text" id="crack-wordlist" class="form-input" placeholder="C:\path\to\passwords.txt">
+                        </div>
+                        <button class="btn btn-secondary" id="btn-crack-backup" onclick="runCrackBackup()">🔓 Attack Backup Password</button>
+                        <div id="crack-result" style="margin-top:12px;display:none;"></div>
                     </div>
                 </div>
             </div>
@@ -529,6 +591,7 @@
             const titles = {
                 overview: 'Overview Dashboard',
                 cases: 'Case Management',
+                triage: 'Live USB Triage & Password Recovery',
                 ingest: 'Forensic Dump Ingestion',
                 analysis: 'Manual Correlation & Decryption',
                 explorer: 'Decrypted Evidence Explorer',
@@ -539,6 +602,7 @@
 
             if (viewName === 'overview') loadOverview();
             if (viewName === 'cases') loadCases();
+            if (viewName === 'triage') loadTriage();
             if (viewName === 'explorer') loadExplorerDatabases();
             if (viewName === 'pairing') loadPairing();
         }
@@ -573,7 +637,7 @@
                 const cases = await res.json();
                 tableBody.innerHTML = '';
                 if (cases.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">No cases registered yet. Create one above.</td></tr>';
+                    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">No cases registered yet. Create one above.</td></tr>';
                     return;
                 }
                 cases.forEach(c => {
@@ -584,11 +648,16 @@
                         <td>${c.examiner}</td>
                         <td>${c.device_count}</td>
                         <td><span class="status-pill status-decrypted">${c.status.toUpperCase()}</span></td>
+                        <td>
+                            <a href="/api/cases/${c.case_id}/pdf" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:0.8rem;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+                                📄 Download PDF
+                            </a>
+                        </td>
                     </tr>`;
                     tableBody.innerHTML += row;
                 });
             } catch (err) {
-                tableBody.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">Failed to load cases: ${err}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="7" style="color:var(--danger);">Failed to load cases: ${err}</td></tr>`;
             }
         }
 
@@ -889,6 +958,161 @@
                 });
             } catch (err) {
                 tableBody.innerHTML = `<tr><td colspan="5" style="color:var(--danger);">Error scanning records: ${err}</td></tr>`;
+            }
+        }
+
+        async function loadTriage() {
+            const container = document.getElementById('triage-devices-container');
+            container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Scanning USB and resolving Access Tiers...</div>';
+            try {
+                const res = await fetch('/api/usb/status');
+                const data = await res.json();
+                if (!data.connected_devices || data.connected_devices.length === 0) {
+                    container.innerHTML = `
+                        <div style="padding:24px;text-align:center;background:rgba(239,68,68,0.06);border:1px dashed rgba(239,68,68,0.25);border-radius:8px;">
+                            <h3 style="color:#f87171;margin-bottom:8px;">⚠️ No Active iOS Devices Detected over USB</h3>
+                            <p style="color:var(--text-muted);font-size:0.9rem;max-width:550px;margin:0 auto 14px auto;">
+                                Connect target iPhone via USB. Ensure the Apple Mobile Device Service (usbmuxd) is running on port 27015.
+                            </p>
+                            <span class="badge" style="background:#1e293b;color:#94a3b8;">${data.usbmuxd_service_running ? '● usbmuxd Running' : '○ usbmuxd Offline'}</span>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = '';
+                data.connected_devices.forEach(dev => {
+                    const tier = dev.access_tier || 'unpaired';
+                    let tierBadge = '';
+                    let tierDesc = '';
+                    if (tier === 'full_backup') {
+                        tierBadge = '<span class="badge" style="background:rgba(16,185,129,0.2);color:#34d399;font-weight:700;padding:6px 14px;border:1px solid rgba(16,185,129,0.4);">JACKPOT: FULL_BACKUP (AFU + Paired)</span>';
+                        tierDesc = '✅ Device is paired and in AFU state with no backup password set. Complete physical/logical backup and keychain can be acquired immediately without screen unlock.';
+                    } else if (tier === 'encrypted_unknown') {
+                        tierBadge = '<span class="badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;font-weight:700;padding:6px 14px;border:1px solid rgba(245,158,11,0.4);">TIER: ENCRYPTED_UNKNOWN (Password Set)</span>';
+                        tierDesc = '⚠️ Device is paired and in AFU state, but has an existing backup password. Use the <strong>AFC Media Fallback</strong> below to extract photos without the password, or run the <strong>Password Cracker</strong>.';
+                    } else if (tier === 'bfu_locked') {
+                        tierBadge = '<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;font-weight:700;padding:6px 14px;border:1px solid rgba(239,68,68,0.4);">TIER: BFU_LOCKED (Keybag Sealed)</span>';
+                        tierDesc = '🔒 Device is in Before-First-Unlock (BFU) state. Keybag is sealed in hardware SEP. Only crash logs and battery status accessible until passcode is entered once.';
+                    } else {
+                        tierBadge = '<span class="badge" style="background:rgba(148,163,184,0.2);color:#cbd5e1;font-weight:700;padding:6px 14px;border:1px solid rgba(148,163,184,0.4);">TIER: UNPAIRED</span>';
+                        tierDesc = '⚠️ No valid pairing record found on this forensic workstation. Device requires "Trust This Computer" interaction on screen.';
+                    }
+
+                    const card = document.createElement('div');
+                    card.style.background = 'var(--bg-card)';
+                    card.style.border = '1px solid var(--border-color)';
+                    card.style.borderRadius = '8px';
+                    card.style.padding = '18px';
+                    card.style.marginBottom = '14px';
+
+                    card.innerHTML = `
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <div>
+                                <h3 style="margin:0 0 4px 0;color:var(--text-bright);">${dev.device_name || 'iOS Device'} <span style="font-size:0.85rem;color:var(--text-muted);">(${dev.product_type || 'Unknown Model'})</span></h3>
+                                <div style="font-size:0.85rem;color:var(--text-muted);font-family:monospace;">UDID: ${dev.udid}</div>
+                            </div>
+                            <div>${tierBadge}</div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:10px;background:rgba(15,23,42,0.6);padding:12px;border-radius:6px;margin-bottom:12px;font-size:0.85rem;">
+                            <div><span style="color:var(--text-muted);">iOS Version:</span> <strong>${dev.product_version || 'N/A'}</strong></div>
+                            <div><span style="color:var(--text-muted);">Lock State:</span> <strong>${dev.lock_state || 'UNKNOWN'}</strong></div>
+                            <div><span style="color:var(--text-muted);">Paired:</span> <strong>${dev.paired ? 'YES' : 'NO'}</strong></div>
+                            <div><span style="color:var(--text-muted);">Backup Password:</span> <strong>${dev.password_set ? 'SET (Unknown)' : 'NONE'}</strong></div>
+                        </div>
+                        <p style="font-size:0.88rem;color:#94a3b8;margin:0;">${tierDesc}</p>
+                    `;
+                    container.appendChild(card);
+                    if (document.getElementById('afc-udid')) {
+                        document.getElementById('afc-udid').value = dev.udid;
+                    }
+                });
+            } catch (err) {
+                container.innerHTML = `<div style="color:var(--danger);padding:16px;">Failed to scan USB: ${err}</div>`;
+            }
+        }
+
+        async function runAfcPull() {
+            const udid = document.getElementById('afc-udid').value.trim();
+            const out = document.getElementById('afc-out').value.trim();
+            const log = document.getElementById('afc-log');
+            const btn = document.getElementById('btn-afc-pull');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Extracting DCIM Photos...';
+            log.style.display = 'block';
+            log.textContent = `[+] Initiating Apple File Conduit (AFC) media pull for ${udid || 'connected device'}...\n`;
+
+            try {
+                const res = await fetch('/api/usb/afc-pull', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({udid: udid || null, output_dir: out || null})
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Extraction failed');
+
+                log.textContent += `[+] AFC Extraction Finished!\n`;
+                log.textContent += `[+] Total files extracted: ${data.total_files_extracted}\n`;
+                log.textContent += `[+] Destination: ${data.output_directory}\n`;
+                if (data.extracted_files && data.extracted_files.length) {
+                    log.textContent += `[+] Sample files: ${data.extracted_files.slice(0, 10).join(', ')}...\n`;
+                }
+            } catch (err) {
+                log.textContent += `[-] Error: ${err.message}\n`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 Start AFC Photo Extraction';
+            }
+        }
+
+        async function runCrackBackup() {
+            const manifest = document.getElementById('crack-manifest').value.trim();
+            const wordlist = document.getElementById('crack-wordlist').value.trim();
+            const resultBox = document.getElementById('crack-result');
+            const btn = document.getElementById('btn-crack-backup');
+
+            if (!manifest) {
+                alert('Please enter path to Manifest.plist of the encrypted backup.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Attacking PBKDF2 Hash...';
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = '<span style="color:#60a5fa;">Testing candidates against PBKDF2 hash...</span>';
+
+            try {
+                const res = await fetch('/api/backup/crack', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({manifest_path: manifest, wordlist_path: wordlist || null})
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Crack failed');
+
+                if (data.cracked) {
+                    resultBox.innerHTML = `
+                        <div style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4);border-radius:6px;padding:12px;">
+                            <div style="color:#34d399;font-weight:700;font-size:1.05rem;">🎉 PASSWORD CRACKED!</div>
+                            <div style="margin-top:6px;font-family:monospace;font-size:1.1rem;color:#f8fafc;">
+                                Password: <span style="background:#065f46;padding:2px 8px;border-radius:4px;">${data.password}</span>
+                            </div>
+                            <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Method: ${data.method} (${data.rounds} PBKDF2 rounds)</div>
+                        </div>
+                    `;
+                } else {
+                    resultBox.innerHTML = `
+                        <div style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.4);border-radius:6px;padding:12px;color:#f87171;">
+                            ❌ Password not cracked. ${data.reason || data.message || 'Exhausted candidate list.'}
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                resultBox.innerHTML = `<div style="color:var(--danger);padding:8px;">Error: ${err.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔓 Attack Backup Password';
             }
         }
 
