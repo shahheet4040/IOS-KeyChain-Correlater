@@ -13,6 +13,8 @@ out/
 cases_workspace/
 *.bak
 *.log
+*.sqlite-shm
+*.sqlite-wal
 
 # IDE & Editor files
 .vscode/

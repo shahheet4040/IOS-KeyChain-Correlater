@@ -17,8 +17,11 @@ from correlator.case_compare import compare_two_cases
 from correlator.case_manager import CaseManager
 from correlator.consolidated_db import generate_consolidated_database
 from correlator.dump_ingest import detect_dump_format, ingest_and_analyze, normalize_dump_to_extraction
+from correlator.entity_recognition import scan_entities_in_evidence
 from correlator.export_formats import export_to_geojson, export_to_jsonl, export_to_xlsx
 from correlator.geospatial import GeoPoint, scan_media_for_gps
+from correlator.media_gallery import scan_media_directory
+from correlator.network_graph import build_network_graph
 from correlator.pairing import find_pairing_records, match_device_to_pairing
 from correlator.pdf_report import generate_case_pdf
 from correlator.pipeline import execute_pipeline
@@ -911,6 +914,75 @@ def export_general_consolidated_db(directory: Optional[str] = None):
         media_type="application/vnd.sqlite3",
         filename="consolidated_case_evidence.sqlite",
     )
+
+
+# ── Contact Network Graph Routes ──────────────────────────────────────
+
+@app.get("/api/network-graph")
+def get_network_graph(directory: Optional[str] = None):
+    """Builds an interactive social network graph showing participants and communication bridges."""
+    search_dirs = []
+    if directory and Path(directory).is_dir():
+        search_dirs.append(Path(directory).resolve())
+    else:
+        for sub in [
+            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "fake" / "decrypted_export",
+        ]:
+            if sub.is_dir() and sub not in search_dirs:
+                search_dirs.append(sub)
+
+    return build_network_graph(search_dirs=search_dirs)
+
+
+# ── Audio & Media Gallery Routes ─────────────────────────────────────
+
+@app.get("/api/media/gallery")
+def get_media_gallery(category: Optional[str] = None):
+    """Catalogs images, voice memos, and videos extracted via AFC or logical dumps."""
+    media_dirs = [
+        BASE_DIR / "out" / "afc_extracted",
+        BASE_DIR / "out" / "afc_photos",
+        BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+        BASE_DIR / "out" / "real_world_case",
+    ]
+    return scan_media_directory(root_dirs=media_dirs, category_filter=category)
+
+
+@app.get("/api/media/file")
+def get_media_file(path: str):
+    """Serves media file stream for browser audio player and image gallery."""
+    p = Path(path).resolve()
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Media file not found")
+    import mimetypes
+    mime, _ = mimetypes.guess_type(str(p))
+    return FileResponse(path=str(p), media_type=mime or "application/octet-stream")
+
+
+# ── Named Entity Recognition (NER) Routes ─────────────────────────────
+
+@app.get("/api/entities")
+def get_entities(directory: Optional[str] = None):
+    """Extracts high-priority forensic entities (Persons, Crypto, Phones, Flights, Financial)."""
+    search_dirs = []
+    if directory and Path(directory).is_dir():
+        search_dirs.append(Path(directory).resolve())
+    else:
+        for sub in [
+            BASE_DIR / "out" / "analysis_results" / "decrypted_exports",
+            BASE_DIR / "out" / "real_world_case_results" / "decrypted_exports",
+            BASE_DIR / "out" / "web_ingest" / "decrypted_exports",
+            BASE_DIR / "data" / "public_datasets" / "real_world_cellebrite",
+            BASE_DIR / "out" / "fake" / "decrypted_export",
+        ]:
+            if sub.is_dir() and sub not in search_dirs:
+                search_dirs.append(sub)
+
+    return scan_entities_in_evidence(search_dirs=search_dirs)
 
 
 # ── Web UI Dashboard Root ────────────────────────────────────────────

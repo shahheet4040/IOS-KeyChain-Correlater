@@ -373,9 +373,65 @@
         @media (max-width: 900px) {
             .docs-grid-2 { grid-template-columns: 1fr; }
         }
+
+        /* ── Media Gallery Grid ── */
+        .media-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .media-card {
+            background: #111827;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.15s ease;
+        }
+        .media-card:hover {
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
+        }
+        .media-thumb-box {
+            height: 140px;
+            background: #0b0f19;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .media-thumb-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .media-details {
+            padding: 10px 12px;
+        }
+
+        /* ── Entity Intelligence Badges ── */
+        .entity-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            background: #1e293b;
+            border: 1px solid var(--border);
+            margin: 4px;
+        }
+        .entity-pill.PERSON { background: rgba(147, 51, 234, 0.15); color: #c084fc; border-color: rgba(147, 51, 234, 0.3); }
+        .entity-pill.CRYPTO { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+        .entity-pill.PHONE { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+        .entity-pill.FINANCIAL { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
+        .entity-pill.FLIGHT_SHIPMENT { background: rgba(236, 72, 153, 0.15); color: #f472b6; border-color: rgba(236, 72, 153, 0.3); }
+        .entity-pill.TEMPORAL { background: rgba(14, 165, 233, 0.15); color: #38bdf8; border-color: rgba(14, 165, 233, 0.3); }
     </style>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
 
@@ -395,6 +451,9 @@
             <div class="nav-item" onclick="switchView('cases')">📁 Case Management</div>
             <div class="nav-item" onclick="switchView('triage')">⚡ Live USB & Recovery</div>
             <div class="nav-item" onclick="switchView('timeline')">💬 Unified Chat Timeline</div>
+            <div class="nav-item" onclick="switchView('network')">🕸️ Contact Network Graph</div>
+            <div class="nav-item" onclick="switchView('media')">🎙️ Audio &amp; Media Gallery</div>
+            <div class="nav-item" onclick="switchView('entities')">🧠 Entity Intelligence</div>
             <div class="nav-item" onclick="switchView('geospatial')">📍 GPS &amp; Photo Heatmap</div>
             <div class="nav-item" onclick="switchView('watchlists')">🚨 Keyword Alerts</div>
             <div class="nav-item" onclick="switchView('provenance')">🗺️ Process &amp; Provenance Map</div>
@@ -718,6 +777,122 @@
                     <div id="timeline-feed" style="max-height:600px;overflow-y:auto;padding-right:8px;">
                         <div style="padding:24px;text-align:center;color:var(--text-muted);">
                             Loading unified messages and web events...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.82 CONTACT NETWORK GRAPH VIEW -->
+            <div id="view-network" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🕸️ Contact Network &amp; Social Graph Analysis</div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="loadNetworkGraph()">🔄 Recalculate Graph</button>
+                        </div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Analyzes communication frequency and interaction patterns to map relationships, key middlemen, and associate clusters across all decrypted apps.
+                    </p>
+
+                    <div class="stats-grid" style="grid-template-columns:repeat(4, 1fr);margin-bottom:16px;">
+                        <div class="stat-card">
+                            <div class="label">Total Nodes (Contacts)</div>
+                            <div class="value" id="stat-net-nodes">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Interactions (Edges)</div>
+                            <div class="value" id="stat-net-edges" style="color:#60a5fa;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Primary Hubs Identified</div>
+                            <div class="value" id="stat-net-hubs" style="color:#f59e0b;">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="label">Target Owner Identified</div>
+                            <div class="value" id="stat-net-target" style="color:#34d399;">Active</div>
+                        </div>
+                    </div>
+
+                    <div style="position:relative;">
+                        <div id="network-graph-container" style="height:550px;width:100%;background:#080d1a;border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+                        <div id="network-node-info" style="position:absolute;top:16px;right:16px;background:rgba(15,23,42,0.92);border:1px solid rgba(59,130,246,0.4);border-radius:8px;padding:14px;max-width:280px;display:none;font-size:0.85rem;color:#f8fafc;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+                            <div id="net-info-title" style="font-weight:700;font-size:0.95rem;color:#60a5fa;margin-bottom:6px;"></div>
+                            <div id="net-info-role" style="color:#f59e0b;font-weight:600;margin-bottom:4px;"></div>
+                            <div id="net-info-messages" style="color:var(--text-muted);margin-bottom:4px;"></div>
+                            <div id="net-info-apps" style="color:var(--text-muted);margin-bottom:4px;"></div>
+                            <div id="net-info-seen" style="color:var(--text-muted);font-size:0.75rem;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.83 INTEGRATED AUDIO & MEDIA GALLERY VIEW -->
+            <div id="view-media" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🎙️ Forensic Audio &amp; Media Gallery</div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="loadMediaGallery()">🔄 Rescan Media</button>
+                        </div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Interactive viewer for AFC-extracted `/DCIM` camera photos, voice notes, audio memos, and video recordings.
+                    </p>
+
+                    <!-- In-Browser HTML5 Audio Player for Voice Notes -->
+                    <div id="audio-player-card" style="background:#1e293b;border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:14px;margin-bottom:18px;display:none;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <div style="font-weight:600;font-size:0.9rem;color:#f8fafc;" id="audio-player-title">🎵 Playing Voice Memo</div>
+                            <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.75rem;" onclick="document.getElementById('audio-player-card').style.display='none'">✕ Close</button>
+                        </div>
+                        <audio id="global-audio-player" controls style="width:100%;"></audio>
+                    </div>
+
+                    <!-- Category Filter Tabs -->
+                    <div style="display:flex;gap:8px;margin-bottom:16px;">
+                        <button class="btn btn-primary" id="btn-media-all" onclick="filterMediaCategory('all')">All Files (<span id="cnt-media-all">0</span>)</button>
+                        <button class="btn btn-secondary" id="btn-media-image" onclick="filterMediaCategory('image')">📷 Photos (<span id="cnt-media-image">0</span>)</button>
+                        <button class="btn btn-secondary" id="btn-media-audio" onclick="filterMediaCategory('audio')">🎙️ Voice Notes (<span id="cnt-media-audio">0</span>)</button>
+                        <button class="btn btn-secondary" id="btn-media-video" onclick="filterMediaCategory('video')">🎬 Videos (<span id="cnt-media-video">0</span>)</button>
+                    </div>
+
+                    <div id="media-gallery-grid" class="media-grid">
+                        <div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">
+                            Loading forensic media files...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2.84 NAMED ENTITY RECOGNITION & INTELLIGENCE VIEW -->
+            <div id="view-entities" class="view-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🧠 Named Entity Recognition (NER) &amp; Intelligence</div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="loadEntities()">🔄 Rescan Entities</button>
+                        </div>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:0.9em;margin-bottom:16px;">
+                        Automated extraction of high-priority entities: person aliases, phone numbers, cryptocurrency wallets, flight/tracking numbers, bank accounts, and meeting dates.
+                    </p>
+
+                    <!-- Filter Buttons -->
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+                        <button class="btn btn-primary" onclick="filterEntitiesByType('ALL')">All Entities</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('PERSON')">👤 Persons &amp; Aliases</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('CRYPTO')">💰 Crypto Addresses</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('PHONE')">📞 Phone Numbers</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('EMAIL')">✉️ Emails</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('FINANCIAL')">💳 Financial / IBAN</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('FLIGHT_SHIPMENT')">✈️ Flights / Tracking</button>
+                        <button class="btn btn-secondary" onclick="filterEntitiesByType('TEMPORAL')">⏱️ Meeting Times</button>
+                    </div>
+
+                    <div id="entities-container" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:14px;">
+                        <div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">
+                            Loading entity intelligence...
                         </div>
                     </div>
                 </div>
@@ -1415,6 +1590,9 @@
                 cases: 'Case Management',
                 triage: 'Live USB Triage & Password Recovery',
                 timeline: 'Unified Cross-Application Chat Timeline',
+                network: 'Contact Network & Social Graph',
+                media: 'Forensic Audio & Media Gallery',
+                entities: 'Named Entity Recognition & Intelligence',
                 geospatial: 'Geospatial Photo EXIF &amp; Heatmap',
                 watchlists: 'Automated Forensic Keyword Alerts',
                 provenance: 'Forensic Process &amp; Provenance Map',
@@ -1430,6 +1608,9 @@
             if (viewName === 'cases') loadCases();
             if (viewName === 'triage') loadTriage();
             if (viewName === 'timeline') loadUnifiedTimeline();
+            if (viewName === 'network') loadNetworkGraph();
+            if (viewName === 'media') loadMediaGallery();
+            if (viewName === 'entities') loadEntities();
             if (viewName === 'geospatial') loadGeospatialData();
             if (viewName === 'watchlists') loadWatchlistAlerts();
             if (viewName === 'provenance') loadDefaultProvenance();
@@ -2439,6 +2620,308 @@
             } catch (err) {
                 box.textContent = `Error executing comparison: ${err}`;
             }
+        }
+
+        // ==================== 2.82 CONTACT NETWORK GRAPH ====================
+        let networkSimulation = null;
+
+        async function loadNetworkGraph() {
+            const container = document.getElementById('network-graph-container');
+            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">Loading network graph analysis...</div>';
+            const nodeInfo = document.getElementById('network-node-info');
+            if (nodeInfo) nodeInfo.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/network-graph');
+                const data = await res.json();
+
+                const nodes = data.nodes || [];
+                const links = data.links || [];
+                const hubs = data.hubs || [];
+                const targetOwner = data.target_owner || 'Unknown';
+
+                document.getElementById('stat-net-nodes').textContent = nodes.length;
+                document.getElementById('stat-net-edges').textContent = links.length;
+                document.getElementById('stat-net-hubs').textContent = hubs.length;
+                document.getElementById('stat-net-target').textContent = targetOwner;
+
+                if (nodes.length === 0) {
+                    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);text-align:center;padding:20px;">No communication network data found.<br>Correlate chat databases or ingest an extraction to view social graph.</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                const width = container.clientWidth || 800;
+                const height = container.clientHeight || 550;
+
+                const svg = d3.select(container)
+                    .append('svg')
+                    .attr('width', '100%')
+                    .attr('height', '100%')
+                    .attr('viewBox', [0, 0, width, height]);
+
+                const g = svg.append('g');
+
+                // Zoom & Pan
+                svg.call(d3.zoom()
+                    .scaleExtent([0.2, 5])
+                    .on('zoom', (event) => g.attr('transform', event.transform)));
+
+                // Role colors
+                const roleColors = {
+                    'Target (Device Owner)': '#10b981',
+                    'Primary Hub / Middleman': '#f59e0b',
+                    'Frequent Associate': '#3b82f6',
+                    'Occasional Contact': '#94a3b8'
+                };
+
+                // Simulation
+                networkSimulation = d3.forceSimulation(nodes)
+                    .force('link', d3.forceLink(links).id(d => d.id).distance(d => Math.max(70, 180 - Math.min(d.count || 1, 20) * 4)))
+                    .force('charge', d3.forceManyBody().strength(-280))
+                    .force('center', d3.forceCenter(width / 2, height / 2))
+                    .force('collision', d3.forceCollide().radius(28));
+
+                // Links
+                const link = g.append('g')
+                    .selectAll('line')
+                    .data(links)
+                    .join('line')
+                    .attr('stroke', 'rgba(96, 165, 250, 0.45)')
+                    .attr('stroke-width', d => Math.min(1 + Math.log2(d.count || 1), 6));
+
+                // Node group
+                const node = g.append('g')
+                    .selectAll('g')
+                    .data(nodes)
+                    .join('g')
+                    .call(d3.drag()
+                        .on('start', (event, d) => {
+                            if (!event.active) networkSimulation.alphaTarget(0.3).restart();
+                            d.fx = d.x;
+                            d.fy = d.y;
+                        })
+                        .on('drag', (event, d) => {
+                            d.fx = event.x;
+                            d.fy = event.y;
+                        })
+                        .on('end', (event, d) => {
+                            if (!event.active) networkSimulation.alphaTarget(0);
+                            d.fx = null;
+                            d.fy = null;
+                        }));
+
+                // Circle
+                node.append('circle')
+                    .attr('r', d => {
+                        if (d.role && d.role.includes('Target')) return 16;
+                        if (d.role && d.role.includes('Hub')) return 13;
+                        return 8 + Math.min((d.degree || 1) * 1.5, 10);
+                    })
+                    .attr('fill', d => roleColors[d.role] || '#60a5fa')
+                    .attr('stroke', '#ffffff')
+                    .attr('stroke-width', 1.5)
+                    .style('cursor', 'pointer');
+
+                // Label
+                node.append('text')
+                    .text(d => d.id.length > 18 ? d.id.substring(0, 16) + '…' : d.id)
+                    .attr('x', 0)
+                    .attr('y', 22)
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', '#e2e8f0')
+                    .attr('font-size', '10px')
+                    .style('pointer-events', 'none')
+                    .style('text-shadow', '0 1px 3px rgba(0,0,0,0.8)');
+
+                // Node click details
+                node.on('click', (event, d) => {
+                    const info = document.getElementById('network-node-info');
+                    if (info) {
+                        document.getElementById('net-info-title').textContent = d.id;
+                        document.getElementById('net-info-role').textContent = `Role: ${d.role}`;
+                        document.getElementById('net-info-messages').textContent = `💬 Total Interactions: ${d.total_messages || 0}`;
+                        document.getElementById('net-info-apps').textContent = `📱 Apps: ${(d.apps || []).join(', ') || 'Unknown'}`;
+                        document.getElementById('net-info-seen').textContent = `⏱️ First: ${d.first_seen || 'N/A'} | Last: ${d.last_seen || 'N/A'}`;
+                        info.style.display = 'block';
+                    }
+                });
+
+                networkSimulation.on('tick', () => {
+                    link
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+
+                    node.attr('transform', d => `translate(${d.x},${d.y})`);
+                });
+
+            } catch (err) {
+                container.innerHTML = `<div style="color:var(--danger);padding:24px;text-align:center;">Failed to load network graph: ${err}</div>`;
+            }
+        }
+
+        // ==================== 2.83 AUDIO & MEDIA GALLERY ====================
+        let currentMediaItems = [];
+
+        async function loadMediaGallery() {
+            const grid = document.getElementById('media-gallery-grid');
+            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">Scanning forensic media directories...</div>';
+
+            try {
+                const res = await fetch('/api/media/gallery');
+                const data = await res.json();
+
+                currentMediaItems = data.items || [];
+                const cats = data.categories || {};
+
+                document.getElementById('cnt-media-all').textContent = data.total || 0;
+                document.getElementById('cnt-media-image').textContent = cats.image || 0;
+                document.getElementById('cnt-media-audio').textContent = cats.audio || 0;
+                document.getElementById('cnt-media-video').textContent = cats.video || 0;
+
+                renderMediaGrid(currentMediaItems);
+            } catch (err) {
+                grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--danger);">Error loading media: ${err}</div>`;
+            }
+        }
+
+        function filterMediaCategory(category) {
+            ['all', 'image', 'audio', 'video'].forEach(c => {
+                const btn = document.getElementById(`btn-media-${c}`);
+                if (btn) {
+                    btn.className = (c === category) ? 'btn btn-primary' : 'btn btn-secondary';
+                }
+            });
+
+            if (category === 'all') {
+                renderMediaGrid(currentMediaItems);
+            } else {
+                renderMediaGrid(currentMediaItems.filter(item => item.category === category));
+            }
+        }
+
+        function renderMediaGrid(items) {
+            const grid = document.getElementById('media-gallery-grid');
+            if (items.length === 0) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">No media files matching criteria found.</div>';
+                return;
+            }
+
+            grid.innerHTML = items.map(item => {
+                let thumbHtml = '';
+                const encodedPath = encodeURIComponent(item.path);
+
+                if (item.category === 'image') {
+                    thumbHtml = `<img src="/api/media/file?path=${encodedPath}" style="width:100%;height:100%;object-fit:cover;" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:2rem;\\'>🖼️</span>';" loading="lazy">`;
+                } else if (item.category === 'audio') {
+                    thumbHtml = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:6px;">
+                        <span style="font-size:2.2rem;">🎙️</span>
+                        <button class="btn btn-primary" style="padding:3px 8px;font-size:0.75rem;" onclick="playAudio('${encodedPath}', '${item.filename.replace(/'/g, "\\'")}')">▶ Play Memo</button>
+                    </div>`;
+                } else if (item.category === 'video') {
+                    thumbHtml = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:2.2rem;">🎬</div>`;
+                } else {
+                    thumbHtml = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:2.2rem;">📄</div>`;
+                }
+
+                return `
+                <div class="media-card">
+                    <div class="media-thumb-box">${thumbHtml}</div>
+                    <div style="padding:10px;">
+                        <div style="font-weight:600;font-size:0.85rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${item.filename}">${item.filename}</div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.75rem;color:var(--text-muted);">
+                            <span>${item.size_formatted}</span>
+                            <span class="badge" style="font-size:0.7rem;">${item.extension.toUpperCase()}</span>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">${item.modified || ''}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function playAudio(encodedPath, filename) {
+            const card = document.getElementById('audio-player-card');
+            const title = document.getElementById('audio-player-title');
+            const player = document.getElementById('global-audio-player');
+
+            card.style.display = 'block';
+            title.textContent = `🎵 Playing Voice Memo: ${filename}`;
+            player.src = `/api/media/file?path=${encodedPath}`;
+            player.play().catch(e => console.warn('Autoplay blocked:', e));
+        }
+
+        // ==================== 2.84 NAMED ENTITY RECOGNITION ====================
+        let currentEntities = [];
+
+        async function loadEntities() {
+            const container = document.getElementById('entities-container');
+            container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">Extracting and grouping forensic entities from evidence...</div>';
+
+            try {
+                const res = await fetch('/api/entities');
+                const data = await res.json();
+
+                currentEntities = data.entities || [];
+                renderEntities(currentEntities);
+            } catch (err) {
+                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--danger);">Error scanning entities: ${err}</div>`;
+            }
+        }
+
+        function filterEntitiesByType(type) {
+            if (type === 'ALL') {
+                renderEntities(currentEntities);
+            } else {
+                renderEntities(currentEntities.filter(e => e.type === type));
+            }
+        }
+
+        function renderEntities(entities) {
+            const container = document.getElementById('entities-container');
+            if (entities.length === 0) {
+                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);">No entities found matching selection. Correlate databases to analyze chats.</div>';
+                return;
+            }
+
+            const typeBadges = {
+                PERSON: { label: '👤 Person / Alias', bg: 'rgba(168, 85, 247, 0.2)', color: '#c084fc' },
+                CRYPTO: { label: '💰 Crypto Wallet / TX', bg: 'rgba(234, 179, 8, 0.2)', color: '#facc15' },
+                PHONE: { label: '📞 Phone Number', bg: 'rgba(34, 197, 94, 0.2)', color: '#4ade80' },
+                EMAIL: { label: '✉️ Email Address', bg: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa' },
+                FINANCIAL: { label: '💳 Financial / Card / IBAN', bg: 'rgba(239, 68, 68, 0.2)', color: '#f87171' },
+                FLIGHT_SHIPMENT: { label: '✈️ Flight / Tracking', bg: 'rgba(6, 182, 212, 0.2)', color: '#22d3ee' },
+                TEMPORAL: { label: '⏱️ Meeting / Timestamp', bg: 'rgba(99, 102, 241, 0.2)', color: '#818cf8' }
+            };
+
+            container.innerHTML = entities.map(item => {
+                const meta = typeBadges[item.type] || { label: item.type, bg: 'rgba(148, 163, 184, 0.2)', color: '#cbd5e1' };
+                const contexts = (item.contexts || []).slice(0, 2).map(c => `
+                    <div style="font-size:0.75rem;color:var(--text-muted);background:rgba(0,0,0,0.25);padding:4px 8px;border-radius:4px;margin-top:4px;border-left:2px solid #3b82f6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.replace(/"/g, '&quot;')}">
+                        ${c}
+                    </div>
+                `).join('');
+
+                const sources = (item.sources || []).map(s => `<span class="badge" style="font-size:0.65rem;">${s}</span>`).join(' ');
+
+                return `
+                <div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:space-between;">
+                    <div>
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+                            <span class="badge" style="background:${meta.bg};color:${meta.color};">${meta.label}</span>
+                            <span class="badge" style="background:rgba(255,255,255,0.06);color:#94a3b8;">🔁 ${item.occurrences}x</span>
+                        </div>
+                        <div style="font-size:0.95rem;font-weight:700;color:#f8fafc;word-break:break-all;font-family:monospace;margin-bottom:8px;">
+                            ${item.value}
+                        </div>
+                        ${contexts ? `<div style="margin-top:6px;">${contexts}</div>` : ''}
+                    </div>
+                    <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:4px;flex-wrap:wrap;">
+                        ${sources}
+                    </div>
+                </div>`;
+            }).join('');
         }
 
         // Initialize on load

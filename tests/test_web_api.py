@@ -12,7 +12,11 @@ from correlator.web.app import (
     export_case_jsonl,
     export_case_xlsx,
     get_case_provenance,
+    get_entities,
     get_geospatial,
+    get_media_file,
+    get_media_gallery,
+    get_network_graph,
     get_pairing_records,
     get_system_overview,
     get_timeline,
@@ -195,6 +199,36 @@ def test_case_compare_endpoint():
     assert "locations" in res
     assert "alerts" in res
     assert "timeline" in res
+
+
+def test_network_graph_endpoint():
+    res = get_network_graph()
+    assert "total_nodes" in res
+    assert "total_edges" in res
+    assert "nodes" in res
+    assert "links" in res
+
+
+def test_media_endpoints(tmp_path: Path):
+    res = get_media_gallery()
+    assert "total" in res
+    assert "categories" in res
+    assert "items" in res
+
+    # Test file streaming with a temporary audio memo
+    test_audio = tmp_path / "voice_memo.m4a"
+    test_audio.write_bytes(b"dummy m4a bytes")
+    stream_res = get_media_file(str(test_audio))
+    assert stream_res.status_code == 200
+    assert stream_res.path == str(test_audio)
+
+
+def test_entities_endpoint():
+    res = get_entities()
+    assert "total_entities" in res
+    assert "summary_by_type" in res
+    assert "entities" in res
+
 
 
 
