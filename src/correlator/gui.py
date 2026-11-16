@@ -390,6 +390,39 @@ class ForensicCorrelatorGUI:
             self.status_var.set(f"Error: {diag['title']}. Check the Execution Logs tab for detailed steps.")
             return
 
+        if not result:
+            return
+
+        self.pipeline_result = result
+        self.btn_open_html.config(state=tk.NORMAL)
+        self.btn_open_folder.config(state=tk.NORMAL)
+
+        total = result.get("total_databases", 0)
+        decrypted = result.get("decrypted_count", 0)
+        plain = result.get("plain_count", 0)
+        locked = result.get("locked_count", 0)
+
+        self._log(f"[+] Finished! Total: {total} databases ({decrypted} decrypted, {plain} plain, {locked} locked).")
+        self.status_var.set(f"Completed! {decrypted} decrypted, {plain} plain, {locked} locked databases.")
+
+        # Populate Results Treeview
+        self._populate_results_table(result.get("results", []))
+
+        # Populate Database Viewer Dropdown
+        self._populate_accessible_databases(result)
+
+        # Populate Forensic Process Map
+        self._populate_provenance_table(result.get("provenance_map", []))
+
+        messagebox.showinfo(
+            "Analysis Complete",
+            f"Forensic correlation finished!\n\n"
+            f"• Decrypted Databases: {decrypted}\n"
+            f"• Plain Databases: {plain}\n"
+            f"• Locked / Undecrypted: {locked}\n\n"
+            f"Check the 'Browse Decrypted Data' tab to inspect recovered tables!",
+        )
+
     def _run_doctor_action(self):
         self._log("\n[*] Running System Doctor & Self-Healing Health Check...")
         res = run_system_doctor(auto_fix=True)
@@ -408,36 +441,6 @@ class ForensicCorrelatorGUI:
             self._log("⚠️ Some checks require attention.\n")
             self.status_var.set("System Doctor: Issues detected. See Execution Logs tab.")
             messagebox.showwarning("System Doctor Health Check", "⚠️ Some diagnostic tests failed:\n\n" + "\n".join(summary_lines))
-
-        self.pipeline_result = result
-        self.btn_open_html.config(state=tk.NORMAL)
-        self.btn_open_folder.config(state=tk.NORMAL)
-
-        total = result["total_databases"]
-        decrypted = result["decrypted_count"]
-        plain = result["plain_count"]
-        locked = result["locked_count"]
-
-        self._log(f"[+] Finished! Total: {total} databases ({decrypted} decrypted, {plain} plain, {locked} locked).")
-        self.status_var.set(f"Completed! {decrypted} decrypted, {plain} plain, {locked} locked databases.")
-
-        # Populate Results Treeview
-        self._populate_results_table(result["results"])
-
-        # Populate Database Viewer Dropdown
-        self._populate_accessible_databases(result)
-
-        # Populate Forensic Process Map
-        self._populate_provenance_table(result.get("provenance_map", []))
-
-        messagebox.showinfo(
-            "Analysis Complete",
-            f"Forensic correlation finished!\n\n"
-            f"• Decrypted Databases: {decrypted}\n"
-            f"• Plain Databases: {plain}\n"
-            f"• Locked / Undecrypted: {locked}\n\n"
-            f"Check the 'Browse Decrypted Data' tab to inspect recovered tables!",
-        )
 
     def _populate_results_table(self, results: List[Any]):
         self.results_tree.delete(*self.results_tree.get_children())
@@ -689,8 +692,9 @@ class ForensicCorrelatorGUI:
                 self._append_acq_log(f"[+] Extracted {len(pulled)} photos/files to: {out_dir}")
                 messagebox.showinfo("AFC Extraction Finished", f"Extracted {len(pulled)} photos/media files to:\n{out_dir}")
             except Exception as e:
-                self._append_acq_log(f"[-] AFC error: {e}")
-                messagebox.showerror("AFC Error", f"AFC photo extraction failed: {e}")
+                err_msg = str(e)
+                self.root.after(0, lambda msg=err_msg: self._append_acq_log(f"[-] AFC error: {msg}"))
+                self.root.after(0, lambda msg=err_msg: messagebox.showerror("AFC Error", f"AFC photo extraction failed: {msg}"))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -731,8 +735,9 @@ class ForensicCorrelatorGUI:
                     self._append_acq_log("[-] Top candidates exhausted without match. You may supply a custom wordlist file.")
                     messagebox.showinfo("Not Found", "Standard candidate passwords exhausted.\nUse custom wordlist for deeper dictionary attack.")
             except Exception as e:
-                self._append_acq_log(f"[-] Cracker error: {e}")
-                messagebox.showerror("Error", f"Password cracker failed: {e}")
+                err_msg = str(e)
+                self.root.after(0, lambda msg=err_msg: self._append_acq_log(f"[-] Cracker error: {msg}"))
+                self.root.after(0, lambda msg=err_msg: messagebox.showerror("Error", f"Password cracker failed: {msg}"))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -829,8 +834,9 @@ class ForensicCorrelatorGUI:
                 self._append_acq_log(f"[+] Device profile saved to: {out_dir / 'device_profile.json'}")
                 messagebox.showinfo("Profile Extracted", f"Device profile saved successfully:\n{out_dir / 'device_profile.json'}")
             except Exception as e:
-                self._append_acq_log(f"[-] Profile extraction error: {e}")
-                messagebox.showerror("Error", f"Could not dump device profile: {e}")
+                err_msg = str(e)
+                self.root.after(0, lambda msg=err_msg: self._append_acq_log(f"[-] Profile extraction error: {msg}"))
+                self.root.after(0, lambda msg=err_msg: messagebox.showerror("Error", f"Could not dump device profile: {msg}"))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -855,8 +861,9 @@ class ForensicCorrelatorGUI:
                 # Auto switch to Results tab
                 self.root.after(0, lambda: self.notebook.select(self.tab_results))
             except Exception as e:
-                self.root.after(0, lambda: self._append_acq_log(f"[-] Acquisition failed: {e}"))
-                self.root.after(0, lambda: messagebox.showerror("Acquisition Error", f"Live USB acquisition failed: {e}"))
+                err_msg = str(e)
+                self.root.after(0, lambda msg=err_msg: self._append_acq_log(f"[-] Acquisition failed: {msg}"))
+                self.root.after(0, lambda msg=err_msg: messagebox.showerror("Acquisition Error", f"Live USB acquisition failed: {msg}"))
             finally:
                 self.root.after(0, lambda: self.btn_1click_acquire.config(state=tk.NORMAL))
 
@@ -1007,7 +1014,8 @@ class ForensicCorrelatorGUI:
                         self.root.after(0, lambda: self.keychain_var.set(str(res["keychain_path"])))
                     self.root.after(0, lambda: messagebox.showinfo("Normalized", f"Extracted {res['db_count']} databases. Ready to correlate!"))
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Ingestion Error", f"Failed to ingest dump: {e}"))
+                err_msg = str(e)
+                self.root.after(0, lambda msg=err_msg: messagebox.showerror("Ingestion Error", f"Failed to ingest dump: {msg}"))
 
         threading.Thread(target=_worker, daemon=True).start()
 

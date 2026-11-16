@@ -22,4 +22,20 @@ def test_gui_instantiation():
     assert app.results_tree is not None
     assert app.data_tree is not None
 
+    # Test _run_doctor_action without crashing
+    from unittest.mock import patch
+    with patch("tkinter.messagebox.showinfo"), patch("tkinter.messagebox.showwarning"):
+        app._run_doctor_action()
+
+    # Test _on_analysis_finished without crashing
+    with patch("tkinter.messagebox.showinfo"):
+        app._on_analysis_finished({
+            "total_databases": 1,
+            "decrypted_count": 1,
+            "plain_count": 0,
+            "locked_count": 0,
+            "results": [],
+            "provenance_map": []
+        }, None)
+
     root.destroy()
