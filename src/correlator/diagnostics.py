@@ -34,7 +34,7 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
             "steps": [
                 "Verify the directory path exists on your hard drive.",
                 "To generate sample test data, run: python harness/make_fake_extraction.py --out out/fake",
-                "Or in the GUI, click the '⚡ Load Demo Data' button to automatically fill valid paths."
+                "Or in the GUI, click the 'Load Demo Data' button to automatically fill valid paths."
             ],
             "quick_command": "python harness/make_fake_extraction.py --out out/fake",
         }
@@ -153,21 +153,21 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
 def format_diagnostic_box(diagnosis: Dict[str, Any]) -> str:
     """Renders a diagnostic report into an easy-to-read ASCII card."""
     lines = [
-        "═" * 70,
-        f" ❌ {diagnosis['title'].upper()}",
-        "═" * 70,
-        f" 📋 Details : {diagnosis['details']}",
-        f" 🔍 Cause   : {diagnosis['cause']}",
-        "─" * 70,
-        " 💡 Recommended Fixes:"
+        "=" * 70,
+        f" [!] {diagnosis['title'].upper()}",
+        "=" * 70,
+        f" [*] Details : {diagnosis['details']}",
+        f" [*] Cause   : {diagnosis['cause']}",
+        "-" * 70,
+        " [*] Recommended Fixes:",
     ]
     for i, step in enumerate(diagnosis.get("steps", []), 1):
         lines.append(f"    {i}. {step}")
 
     if diagnosis.get("quick_command"):
-        lines.append("─" * 70)
-        lines.append(f" 🛠️  Quick Command to Fix: {diagnosis['quick_command']}")
-    lines.append("═" * 70)
+        lines.append("-" * 70)
+        lines.append(f" [*] Quick Command to Fix: {diagnosis['quick_command']}")
+    lines.append("=" * 70)
     return "\n".join(lines)
 
 

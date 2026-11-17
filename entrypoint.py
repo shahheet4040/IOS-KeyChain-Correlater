@@ -22,59 +22,53 @@ else:
         sys.path.insert(0, str(src_dir))
 
 
-# Ensure safe stdout/stderr streams on Windows
-if sys.platform == "win32":
-    os.environ["PYTHONIOENCODING"] = "utf-8"
-    if sys.stdout is None:
-        try:
-            sys.stdout = open(os.devnull, "w", encoding="utf-8", errors="replace")
-        except Exception:
-            sys.stdout = io.StringIO()
-    else:
-        try:
-            if hasattr(sys.stdout, "reconfigure"):
-                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
-
-    if sys.stderr is None:
-        try:
-            sys.stderr = open(os.devnull, "w", encoding="utf-8", errors="replace")
-        except Exception:
-            sys.stderr = io.StringIO()
-    else:
-        try:
-            if hasattr(sys.stderr, "reconfigure"):
-                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
-
-
 def attach_parent_console():
     """Attach to calling parent console (PowerShell/CMD) if launched from terminal."""
     if sys.platform == "win32":
         try:
-            # If stdout is already connected to a terminal pipe or file, ensure UTF-8
-            if sys.stdout is not None and not isinstance(sys.stdout, io.StringIO) and getattr(sys.stdout, "name", "") != os.devnull:
-                if hasattr(sys.stdout, "reconfigure"):
-                    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-                if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
-                    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-                return
-
             # -1 = ATTACH_PARENT_PROCESS
-            if ctypes.windll.kernel32.AttachConsole(-1):
-                sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
-                sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+            # If already attached, GetLastError() returns 5 (ERROR_ACCESS_DENIED) which is fine!
+            ctypes.windll.kernel32.AttachConsole(-1)
         except Exception:
             pass
+
+        # Ensure sys.stdout and sys.stderr are bound to safe streams that never fail on charmap encoding
+        for stream_name in ("stdout", "stderr"):
+            stream = getattr(sys, stream_name, None)
+            reconfigured = False
+            if stream is not None and not isinstance(stream, io.StringIO):
+                name = getattr(stream, "name", "")
+                if name not in (os.devnull, "<nul>", "nul"):
+                    try:
+                        if hasattr(stream, "reconfigure"):
+                            stream.reconfigure(encoding="utf-8", errors="replace")
+                            reconfigured = True
+                    except Exception:
+                        pass
+
+            if not reconfigured:
+                try:
+                    setattr(sys, stream_name, open("CONOUT$", "w", encoding="utf-8", errors="replace"))
+                except Exception:
+                    try:
+                        setattr(sys, stream_name, open(os.devnull, "w", encoding="utf-8", errors="replace"))
+                    except Exception:
+                        setattr(sys, stream_name, io.StringIO())
 
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] not in ("--gui", "-g"):
         attach_parent_console()
-        from correlator.cli import main as cli_main
-        sys.exit(cli_main(sys.argv[1:]))
+        try:
+            from correlator.cli import main as cli_main
+            sys.exit(cli_main(sys.argv[1:]))
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"[-] Unhandled CLI exception: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
     else:
         from correlator.gui import main as gui_main
         gui_main()

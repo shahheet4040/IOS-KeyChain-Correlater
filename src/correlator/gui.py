@@ -650,6 +650,7 @@ class ForensicCorrelatorGUI:
         self.lbl_results_count.pack(side=tk.LEFT, padx=12)
 
         ttk.Button(bar, text="📊 Export Results CSV", command=self._export_results_csv).pack(side=tk.RIGHT)
+        ttk.Button(bar, text="🔓 Recover Locked / Orphan...", command=self._open_orphan_recovery_dialog).pack(side=tk.RIGHT, padx=6)
 
         # Treeview
         tree_frame = ttk.Frame(parent)
@@ -759,6 +760,7 @@ class ForensicCorrelatorGUI:
         self.table_count_label.pack(side=tk.RIGHT, padx=4)
 
         ttk.Button(controls, text="💾 Export CSV", command=self._export_current_table_csv).pack(side=tk.RIGHT, padx=6)
+        ttk.Button(controls, text="🔓 Recover Locked / Orphan...", command=self._open_orphan_recovery_dialog).pack(side=tk.RIGHT, padx=6)
 
         # Viewer Treeview for generic tabular display
         table_container = ttk.Frame(parent)
@@ -819,6 +821,163 @@ class ForensicCorrelatorGUI:
                 writer.writerow(self.current_table_cols)
                 writer.writerows(self.current_table_rows)
             messagebox.showinfo("Export Complete", f"Exported {len(self.current_table_rows)} rows to:\n{dest}")
+
+    def _open_orphan_recovery_dialog(self):
+        """Interactive dialog to crack/recover locked/orphan databases and carve residual artifacts."""
+        win = tk.Toplevel(self.root)
+        win.title("🔓 Autonomous Locked & Orphan Database Recovery")
+        win.geometry("740x600")
+        win.minsize(680, 520)
+
+        pad = ttk.Frame(win, padding=16)
+        pad.pack(fill=tk.BOTH, expand=True)
+
+        header = ttk.Label(
+            pad,
+            text="Locked & Orphan Database Recovery Engine",
+            font=("Segoe UI", 12, "bold"),
+        )
+        header.pack(anchor=tk.W, pady=(0, 4))
+
+        sub = ttk.Label(
+            pad,
+            text="Scrapes app container plists, derives candidate keys from smart iOS PINs/wordlists.\nIf key recovery is exhausted, deeply carves residual plaintext tokens from companion WAL & slack space.",
+            font=("Segoe UI", 9),
+            foreground="#8b949e",
+        )
+        sub.pack(anchor=tk.W, pady=(0, 14))
+
+        form = ttk.Frame(pad)
+        form.pack(fill=tk.X, pady=(0, 10))
+
+        # 1. DB path
+        ttk.Label(form, text="Target SQLite Database:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky=tk.W, pady=4)
+        db_var = tk.StringVar()
+        sel = self.results_tree.selection()
+        if sel:
+            item_vals = self.results_tree.item(sel[0], "values")
+            if item_vals and len(item_vals) > 1:
+                rel = item_vals[1]
+                if hasattr(self, "current_extraction_root") and self.current_extraction_root:
+                    cand = Path(self.current_extraction_root) / rel
+                    if cand.exists():
+                        db_var.set(str(cand))
+
+        db_entry = ttk.Entry(form, textvariable=db_var, width=48)
+        db_entry.grid(row=0, column=1, sticky=tk.EW, padx=6, pady=4)
+        def browse_db():
+            f = filedialog.askopenfilename(title="Select Locked SQLite Database", filetypes=[("SQLite / DB", "*.db;*.sqlite;*.sqlite3"), ("All Files", "*.*")])
+            if f:
+                db_var.set(f)
+        ttk.Button(form, text="Browse...", command=browse_db).grid(row=0, column=2, padx=4, pady=4)
+
+        # 2. Container directory (optional)
+        ttk.Label(form, text="Container Directory (optional):").grid(row=1, column=0, sticky=tk.W, pady=4)
+        cont_var = tk.StringVar()
+        cont_entry = ttk.Entry(form, textvariable=cont_var, width=48)
+        cont_entry.grid(row=1, column=1, sticky=tk.EW, padx=6, pady=4)
+        def browse_cont():
+            d = filedialog.askdirectory(title="Select App Container Directory")
+            if d:
+                cont_var.set(d)
+        ttk.Button(form, text="Browse...", command=browse_cont).grid(row=1, column=2, padx=4, pady=4)
+
+        # 3. Explicit Candidate PIN / Passphrase
+        ttk.Label(form, text="Candidate PIN / Passphrase:").grid(row=2, column=0, sticky=tk.W, pady=4)
+        pin_var = tk.StringVar()
+        pin_entry = ttk.Entry(form, textvariable=pin_var, width=48)
+        pin_entry.grid(row=2, column=1, sticky=tk.EW, padx=6, pady=4)
+
+        # 4. Custom Wordlist (optional)
+        ttk.Label(form, text="Custom Wordlist (optional):").grid(row=3, column=0, sticky=tk.W, pady=4)
+        word_var = tk.StringVar()
+        word_entry = ttk.Entry(form, textvariable=word_var, width=48)
+        word_entry.grid(row=3, column=1, sticky=tk.EW, padx=6, pady=4)
+        def browse_wl():
+            f = filedialog.askopenfilename(title="Select Wordlist File", filetypes=[("Text files", "*.txt"), ("All Files", "*.*")])
+            if f:
+                word_var.set(f)
+        ttk.Button(form, text="Browse...", command=browse_wl).grid(row=3, column=2, padx=4, pady=4)
+
+        form.columnconfigure(1, weight=1)
+
+        status_lbl = ttk.Label(pad, text="Ready.", font=("Segoe UI", 9, "italic"))
+        status_lbl.pack(anchor=tk.W, pady=(4, 2))
+
+        txt_log = tk.Text(pad, wrap=tk.WORD, height=12, font=("Consolas", 9), padx=8, pady=8)
+        txt_log.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        btn_bar = ttk.Frame(pad)
+        btn_bar.pack(fill=tk.X)
+
+        btn_close = ttk.Button(btn_bar, text="Close", command=win.destroy)
+        btn_close.pack(side=tk.RIGHT, padx=4)
+
+        btn_run = ttk.Button(btn_bar, text="🚀 Start Recovery", style="Primary.TButton")
+        btn_run.pack(side=tk.RIGHT, padx=6)
+
+        def do_recovery():
+            db_path_str = db_var.get().strip()
+            if not db_path_str or not Path(db_path_str).exists():
+                messagebox.showerror("Error", "Please provide a valid SQLite database path.", parent=win)
+                return
+
+            btn_run.config(state=tk.DISABLED)
+            status_lbl.config(text="Recovering... scraping container secrets and testing candidate profiles...")
+            txt_log.delete("1.0", tk.END)
+            txt_log.insert(tk.END, f"[*] Target database: {db_path_str}\n")
+            txt_log.update()
+
+            def worker():
+                from correlator.advanced_decryptor import export_orphan_artifacts_csv, export_orphan_artifacts_json, recover_orphan_database
+                out_dir = Path("out/orphan_recovery")
+                res = recover_orphan_database(
+                    db_path=Path(db_path_str),
+                    container_dir=Path(cont_var.get().strip()) if cont_var.get().strip() else None,
+                    wordlist_path=Path(word_var.get().strip()) if word_var.get().strip() else None,
+                    extra_passwords=[pin_var.get().strip()] if pin_var.get().strip() else None,
+                    out_dir=out_dir,
+                )
+
+                def update_ui():
+                    btn_run.config(state=tk.NORMAL)
+                    is_unlocked = res.status == "decrypted"
+                    txt_log.insert(tk.END, f"[*] Recovery Status: {res.status.upper()}\n")
+                    txt_log.insert(tk.END, f"[*] Decryption Succeeded: {is_unlocked}\n")
+                    if is_unlocked:
+                        status_lbl.config(text=f"SUCCESS: Decrypted ({res.profile})")
+                        txt_log.insert(tk.END, f"[+] Discovered Key: {res.key_hex or res.key_fingerprint}\n")
+                        txt_log.insert(tk.END, f"[+] Key Profile: {res.profile}\n")
+                        txt_log.insert(tk.END, f"[+] Plaintext SQLite: {res.decrypted_export_path}\n")
+                        txt_log.insert(tk.END, f"[+] Tables ({len(res.tables)}): {', '.join(res.tables)}\n\n")
+                        if hasattr(self, "accessible_databases") and res.decrypted_export_path:
+                            name = f"[Decrypted] {Path(res.decrypted_export_path).name}"
+                            self.accessible_databases[name] = Path(res.decrypted_export_path)
+                            names = list(self.accessible_databases.keys())
+                            self.db_selector["values"] = names
+                            self.db_selector.set(name)
+                            self._on_db_selected(None)
+                        messagebox.showinfo("Recovery Success", f"Successfully decrypted database!\n\nKey: {res.key_hex or res.key_fingerprint}\nProfile: {res.profile}\nExport: {res.decrypted_export_path}", parent=win)
+                    else:
+                        status_lbl.config(text="Key exhausted. Residual carving fallback completed.")
+                        txt_log.insert(tk.END, f"[!] Main database remains locked.\n")
+                        txt_log.insert(tk.END, f"[*] Recovered {len(res.carved_artifacts)} residual text/token artifacts from companion WAL and slack space.\n")
+                        if res.carved_artifacts:
+                            json_f = out_dir / f"{Path(db_path_str).stem}_carved_evidence.json"
+                            csv_f = out_dir / f"{Path(db_path_str).stem}_carved_evidence.csv"
+                            export_orphan_artifacts_json(res.carved_artifacts, json_f)
+                            export_orphan_artifacts_csv(res.carved_artifacts, csv_f)
+                            txt_log.insert(tk.END, f"[+] Carved Evidence JSON: {json_f}\n")
+                            txt_log.insert(tk.END, f"[+] Carved Evidence CSV: {csv_f}\n")
+                            for a in res.carved_artifacts[:8]:
+                                txt_log.insert(tk.END, f"    • [{a.source}] {a.snippet[:70]}\n")
+                            messagebox.showwarning("Carved Evidence Recovered", f"Could not decrypt master database, but recovered {len(res.carved_artifacts)} residual artifacts from companion WAL and slack space.\n\nEvidence saved to:\n{json_f}", parent=win)
+
+                win.after(0, update_ui)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        btn_run.config(command=do_recovery)
 
     # ── Tab 3: Social & Contact Network Graph ────────────────────────
 

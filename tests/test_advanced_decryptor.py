@@ -8,9 +8,13 @@ import pytest
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from correlator.advanced_decryptor import (
+    OrphanRecoveryResult,
     carve_text_artifacts,
     deep_unlock_database,
+    export_orphan_artifacts_csv,
+    export_orphan_artifacts_json,
     generate_smart_keys,
+    recover_orphan_database,
     scrape_container_secrets,
 )
 from correlator.engine import correlate_database
@@ -129,3 +133,63 @@ def test_correlate_database_with_deep_recover(tmp_path):
     assert res_deep.status == "decrypted"
     assert res_deep.key_bytes == key_bytes
     assert res_deep.recovery_method == "smart_sha256_derivation"
+
+
+def test_recover_orphan_database_with_smart_pin(tmp_path):
+    """Verify orphan recovery engine cracks locked DB via smart iOS PIN and exports plaintext."""
+    db_file = tmp_path / "orphan_pin.db"
+    key_bytes = hashlib.sha256(b"2580").digest()
+
+    con = sqlcipher.connect(str(db_file))
+    con.execute(f"PRAGMA key = \"x'{key_bytes.hex()}'\";")
+    con.execute("CREATE TABLE evidence(id INT, note TEXT);")
+    con.execute("INSERT INTO evidence VALUES (1, 'Sensitive evidence unlocked');")
+    con.commit()
+    con.close()
+
+    out_dir = tmp_path / "orphan_out"
+    res = recover_orphan_database(db_file, out_dir=out_dir)
+    assert res.status == "decrypted"
+    assert "evidence" in res.tables
+    assert res.decrypted_export_path is not None
+    assert Path(res.decrypted_export_path).is_file()
+
+    # Verify decrypted export is readable as standard SQLite
+    con_plain = sqlite3.connect(res.decrypted_export_path)
+    cur = con_plain.cursor()
+    cur.execute("SELECT note FROM evidence;")
+    rows = cur.fetchall()
+    con_plain.close()
+    assert rows[0][0] == "Sensitive evidence unlocked"
+
+
+def test_recover_orphan_database_fallback_carve(tmp_path):
+    """Verify orphan recovery engine falls back to deep slack/WAL carving when key is missing."""
+    db_file = tmp_path / "unknown_orphan.db"
+    # Create locked DB with a completely unknown random 32-byte key
+    unknown_key = b"\xde\xad" * 16
+
+    con = sqlcipher.connect(str(db_file))
+    con.execute(f"PRAGMA key = \"x'{unknown_key.hex()}'\";")
+    con.execute("CREATE TABLE t(x);")
+    con.commit()
+    con.close()
+
+    # Write companion WAL with recoverable text string
+    wal_file = db_file.with_name(db_file.name + "-wal")
+    wal_file.write_bytes(
+        b"\x37\x7f\x06\x83" + b"\x00" * 28 +
+        b"Call suspect at +1-555-839-2041 regarding wire transfer to wallet 0x71c6187d3844"
+    )
+
+    out_dir = tmp_path / "carve_out"
+    res = recover_orphan_database(db_file, out_dir=out_dir, force_carve=True)
+    assert res.status == "partially_carved"
+    assert res.carved_artifacts_count >= 1
+    assert res.evidence_json_path is not None
+    assert Path(res.evidence_json_path).is_file()
+    assert Path(res.evidence_csv_path).is_file()
+
+    # Verify CSV has recovered content
+    csv_text = Path(res.evidence_csv_path).read_text(encoding="utf-8")
+    assert "+1-555-839-2041" in csv_text or "suspect" in csv_text

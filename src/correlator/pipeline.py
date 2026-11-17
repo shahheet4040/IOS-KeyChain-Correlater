@@ -258,6 +258,31 @@ def execute_pipeline(
         passwords=passwords,
     )
 
+    # ── Automated Orphan & Locked Database Recovery Escalation ──────
+    orphan_recovery_items = []
+    orphan_out_dir = Path(out_dir) / "orphan_recovery" if out_dir else None
+    for r in results:
+        if r.status == "not_decrypted":
+            try:
+                from correlator.advanced_decryptor import recover_orphan_database
+                src_db = extraction_path / r.relpath if not Path(r.relpath).is_absolute() else Path(r.relpath)
+                orp_res = recover_orphan_database(
+                    db_path=src_db,
+                    extra_passwords=passwords,
+                    out_dir=orphan_out_dir,
+                    force_carve=True,
+                )
+                orphan_recovery_items.append(orp_res.to_dict())
+                # If orphan recovery unlocked it, promote to decrypted!
+                if orp_res.status == "decrypted" and orp_res.key_bytes:
+                    r.status = "decrypted"
+                    r.key_bytes = orp_res.key_bytes
+                    r.key_fingerprint = orp_res.key_fingerprint
+                    r.profile = orp_res.profile
+                    r.recovery_method = orp_res.recovery_method
+            except Exception as e:
+                print(f"  [!] Notice during orphan database recovery: {e}", file=sys.stderr)
+
     exported_files = []
     decrypted_count = sum(1 for r in results if r.status == "decrypted")
     plain_count = sum(1 for r in results if r.status == "plain")
@@ -473,6 +498,10 @@ def execute_pipeline(
             "dossiers": lead_dossiers_all,
             "briefing": case_briefing_obj,
             "files": lead_files,
+        },
+        "orphan_recovery": {
+            "total_processed": len(orphan_recovery_items),
+            "items": orphan_recovery_items,
         },
     }
 

@@ -318,3 +318,13 @@ def test_gui_dossier_tab(gui_app):
     assert "+15550199234" in content
     assert "mallory@agency.org" in content
     assert "0x71C..." in content
+
+
+def test_gui_orphan_recovery_dialog(gui_app):
+    """Verify that the orphan database recovery dialog opens and initializes cleanly."""
+    app = gui_app
+    with patch("tkinter.Toplevel") as mock_top:
+        mock_win = MagicMock()
+        mock_top.return_value = mock_win
+        app._open_orphan_recovery_dialog()
+        assert mock_top.called

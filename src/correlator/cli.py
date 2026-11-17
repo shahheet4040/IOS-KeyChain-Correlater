@@ -116,6 +116,14 @@ def main(argv=None):
     dossier_parser.add_argument("--out", "-o", default=Path("out/dossiers"), type=Path, help="Output directory for dossier HTML, JSON, and CSV")
     dossier_parser.add_argument("--open", action="store_true", help="Automatically open interactive dossier viewer in web browser")
 
+    # 'orphan' subcommand (Autonomous locked/orphan database decryption & residual carving)
+    orphan_parser = subparsers.add_parser("orphan", aliases=["unlock"], help="Recover locked/orphan SQLite databases via container secrets, PINs, and deep carving")
+    orphan_parser.add_argument("--db", "-d", required=True, type=Path, help="Path to locked SQLite database file")
+    orphan_parser.add_argument("--container", "-c", type=Path, default=None, help="Path to app container root (defaults to parent directory)")
+    orphan_parser.add_argument("--wordlist", "-w", type=Path, default=None, help="Optional candidate password wordlist file")
+    orphan_parser.add_argument("--pin", type=str, default=None, help="Explicit device PIN or passphrase to test")
+    orphan_parser.add_argument("--out", "-o", default=Path("out/orphan_recovery"), type=Path, help="Output directory for decrypted database or carved evidence")
+
     # Top-level direct arguments (backward-compatibility when subcommand omitted)
     parser.add_argument("--root", "--extraction", "-e", dest="root", type=Path, help="Path to iOS extraction root")
     parser.add_argument("--keychain", "-k", type=Path, help="Path to normalized keychain JSON export")
@@ -156,7 +164,7 @@ def main(argv=None):
         )
 
         print("\n" + "=" * 70)
-        print(" 🌍 iOS Forensic Geospatial & GPS Movement Engine")
+        print(" [+] iOS Forensic Geospatial & GPS Movement Engine")
         print("=" * 70)
         print(f" [*] Scanning extraction root: {args.root}")
 
@@ -203,7 +211,7 @@ def main(argv=None):
         )
 
         print("\n" + "=" * 70)
-        print(" 🕵️ iOS Forensic SQLite Deleted Data & Slack Space Carver")
+        print(" [+] iOS Forensic SQLite Deleted Data & Slack Space Carver")
         print("=" * 70)
 
         out_dir = Path(args.out).resolve()
@@ -250,7 +258,7 @@ def main(argv=None):
 
         scan_dir = args.dir or Path(".")
         print("\n" + "=" * 70)
-        print(" ⏱️ iOS Forensic Master Cross-Application Timeline Engine")
+        print(" [+] iOS Forensic Master Cross-Application Timeline Engine")
         print("=" * 70)
         print(f" [*] Scanning evidence directory: {scan_dir}")
 
@@ -299,7 +307,7 @@ def main(argv=None):
 
         scan_dir = args.dir or Path(".")
         print("\n" + "=" * 70)
-        print(" 🎯 iOS Forensic Case Briefing & Target Dossier Synthesizer")
+        print(" [+] iOS Forensic Case Briefing & Target Dossier Synthesizer")
         print("=" * 70)
         print(f" [*] Synthesizing intelligence from: {scan_dir}")
 
@@ -333,21 +341,77 @@ def main(argv=None):
             webbrowser.open(html_p.resolve().as_uri())
         return 0
 
+    if argv and argv[0] in ("orphan", "unlock"):
+        try:
+            args = orphan_parser.parse_args(argv[1:])
+        except SystemExit as e:
+            return e.code if e.code is not None else 1
+
+        from correlator.advanced_decryptor import (
+            export_orphan_artifacts_csv,
+            export_orphan_artifacts_json,
+            recover_orphan_database,
+        )
+
+        print("\n" + "=" * 70)
+        print(" [+] iOS Forensic Orphan & Locked Database Recovery Engine")
+        print("=" * 70)
+        print(f" [*] Target Database    : {args.db}")
+        if args.container:
+            print(f" [*] App Container      : {args.container}")
+        if args.wordlist:
+            print(f" [*] Custom Wordlist    : {args.wordlist}")
+        if args.pin:
+            print(f" [*] Explicit Candidate : {args.pin}")
+
+        res = recover_orphan_database(
+            db_path=args.db,
+            container_dir=args.container,
+            wordlist_path=args.wordlist,
+            extra_passwords=[args.pin] if args.pin else None,
+            out_dir=args.out,
+        )
+
+        out_p = Path(args.out).resolve()
+        out_p.mkdir(parents=True, exist_ok=True)
+
+        print("\n" + "-" * 70)
+        print(f" [*] Recovery Status    : {res.status.upper()}")
+        is_unlocked = res.status == "decrypted"
+        print(f" [*] Decryption Success : {is_unlocked}")
+        if is_unlocked:
+            print(f" [+] Discovered Key     : {res.key_hex or res.key_fingerprint}")
+            print(f" [+] Profile / Strategy : {res.profile}")
+            print(f" [+] Decrypted Plaintext: {res.decrypted_export_path}")
+            print(f" [+] Schema Tables ({len(res.tables)}): {', '.join(res.tables[:8])}")
+        else:
+            print(" [!] Database remains encrypted after trying candidate keys.")
+            print(f" [*] Residual Carving   : {len(res.carved_artifacts)} text/token artifacts recovered from slack/WAL")
+            if res.carved_artifacts:
+                json_path = out_p / f"{args.db.stem}_carved_evidence.json"
+                csv_path = out_p / f"{args.db.stem}_carved_evidence.csv"
+                export_orphan_artifacts_json(res.carved_artifacts, json_path)
+                export_orphan_artifacts_csv(res.carved_artifacts, csv_path)
+                print(f" [+] Carved JSON Export : {json_path}")
+                print(f" [+] Carved CSV Export  : {csv_path}")
+        print("=" * 70 + "\n")
+        return 0
+
     if argv and argv[0] == "doctor":
         fix = "--fix" in argv
         res = run_system_doctor(auto_fix=fix)
-        print("\n" + "═" * 70)
-        print(" 🏥 iOS Keychain Correlator — System Doctor & Health Check")
-        print("═" * 70)
+        print("\n" + "=" * 70)
+        print(" [+] iOS Keychain Correlator -- System Doctor & Health Check")
+        print("=" * 70)
         for c in res["checks"]:
-            sym = "✅" if c["status"] in ("PASS", "FIXED") else ("⚠️" if c["status"] == "WARN" else "❌")
+            sym = "[PASS]" if c["status"] in ("PASS", "FIXED") else ("[WARN]" if c["status"] == "WARN" else "[FAIL]")
             print(f" {sym} {c['name']:<25} [{c['status']}] - {c['msg']}")
-        print("─" * 70)
+        print("-" * 70)
         if res["healthy"]:
-            print(" 🎉 System is 100% healthy, configured, and ready to correlate!\n")
+            print(" [+] System is 100% healthy, configured, and ready to correlate!\n")
             return 0
         else:
-            print(" ⚠️  Some items require attention. Run with '--fix' to automatically resolve them:\n")
+            print(" [!] Some items require attention. Run with '--fix' to automatically resolve them:\n")
             print("     python -m correlator.cli doctor --fix\n")
             return 1
 
@@ -365,14 +429,14 @@ def main(argv=None):
             return e.code if e.code is not None else 1
         try:
             items, fmt = import_keychain(args.input, output_json=args.out)
-            print("\n" + "═" * 70)
-            print(" 🔑 Universal Forensic Keychain Importer")
-            print("═" * 70)
+            print("\n" + "=" * 70)
+            print(" [+] Universal Forensic Keychain Importer")
+            print("=" * 70)
             print(f" [+] Detected Format : {fmt}")
             print(f" [+] Records Loaded  : {len(items)}")
             print(f" [+] Saved to        : {args.out}")
-            print("═" * 70)
-            print(" 🎉 File normalized successfully. Ready for correlation run!\n")
+            print("=" * 70)
+            print(" [+] File normalized successfully. Ready for correlation run!\n")
             return 0
         except Exception as e:
             print(f"[-] Failed to import keychain: {e}", file=sys.stderr)
@@ -398,9 +462,9 @@ def main(argv=None):
 
         if args.devices:
             from correlator.acquisition import is_usbmuxd_running
-            print("\n" + "═" * 70)
-            print(" 📱 iOS Live USB Device Discovery")
-            print("═" * 70)
+            print("\n" + "=" * 70)
+            print(" [+] iOS Live USB Device Discovery")
+            print("=" * 70)
             if not is_usbmuxd_running():
                 print(" [!] Apple Mobile Device Service (usbmuxd) is not running on port 27015.")
                 print("     To connect to physical iPhones on Windows:")
@@ -426,12 +490,12 @@ def main(argv=None):
         if args.profile:
             try:
                 prof = dump_device_profile(udid=args.udid, out_file=args.out / "device_profile.json")
-                print("\n" + "═" * 70)
-                print(" 📋 Forensic Device Hardware Profile")
-                print("═" * 70)
+                print("\n" + "=" * 70)
+                print(" [+] Forensic Device Hardware Profile")
+                print("=" * 70)
                 for k, v in prof.items():
                     print(f"  {k:<35}: {v}")
-                print("═" * 70)
+                print("=" * 70)
                 print(f" [+] Saved profile to: {args.out / 'device_profile.json'}\n")
                 return 0
             except Exception as e:
@@ -439,21 +503,21 @@ def main(argv=None):
                 return 1
 
         if args.all_in_one:
-            print("\n" + "═" * 70)
-            print(" 🚀 Live USB All-in-One: Acquire -> Correlate -> Decrypt -> Report")
-            print("═" * 70)
+            print("\n" + "=" * 70)
+            print(" [+] Live USB All-in-One: Acquire -> Correlate -> Decrypt -> Report")
+            print("=" * 70)
             try:
                 def prog(msg, pct):
                     print(f" [{int(pct*100):>3}%] {msg}")
 
                 res = acquire_live_pipeline(out_dir=args.out, udid=args.udid, progress_callback=prog)
-                print("\n" + "═" * 70)
-                print(" 🎉 Complete Live Acquisition and Decryption Succeeded!")
-                print("═" * 70)
+                print("\n" + "=" * 70)
+                print(" [+] Complete Live Acquisition and Decryption Succeeded!")
+                print("=" * 70)
                 print(f" [+] Device Profile   : {args.out / 'device_profile.json'}")
                 print(f" [+] Decrypted DBs    : {res['decrypted_exports']}")
                 print(f" [+] HTML Report      : {res['report_html']}")
-                print("═" * 70 + "\n")
+                print("=" * 70 + "\n")
                 return 0
             except Exception as e:
                 print(f"[-] All-in-one acquisition failed: {e}", file=sys.stderr)
@@ -470,9 +534,9 @@ def main(argv=None):
             return e.code if e.code is not None else 1
 
         from correlator.dump_ingest import ingest_and_analyze, normalize_dump_to_extraction
-        print("\n" + "═" * 70)
-        print(" 📦 Cellebrite / GrayKey / iTunes Auto-Ingestion Engine")
-        print("═" * 70)
+        print("\n" + "=" * 70)
+        print(" [+] Cellebrite / GrayKey / iTunes Auto-Ingestion Engine")
+        print("=" * 70)
 
         def progress_printer(msg, pct):
             print(f" [{int(pct*100):>3}%] {msg}")
@@ -480,23 +544,23 @@ def main(argv=None):
         try:
             if args.analyze:
                 res = ingest_and_analyze(args.dump, args.out, progress_callback=progress_printer)
-                print("\n" + "═" * 70)
-                print(" 🎉 Ingestion & Correlation Analysis Complete!")
-                print("═" * 70)
+                print("\n" + "=" * 70)
+                print(" [+] Ingestion & Correlation Analysis Complete!")
+                print("=" * 70)
                 print(f" [+] Source Format : {res['format']}")
                 print(f" [+] Databases     : {res['db_count']} ({res['decrypted_count']} decrypted, {res['plain_count']} plain)")
                 print(f" [+] HTML Report   : {res.get('report_html')}")
-                print("═" * 70 + "\n")
+                print("=" * 70 + "\n")
             else:
                 res = normalize_dump_to_extraction(args.dump, args.out, progress_callback=progress_printer)
-                print("\n" + "═" * 70)
-                print(" 🎉 Normalization Complete!")
-                print("═" * 70)
+                print("\n" + "=" * 70)
+                print(" [+] Normalization Complete!")
+                print("=" * 70)
                 print(f" [+] Detected Format : {res['format']}")
                 print(f" [+] Extracted DBs   : {res['db_count']}")
                 print(f" [+] App Containers  : {res['app_count']}")
                 print(f" [+] Ready in        : {res['extraction_path']}")
-                print("═" * 70 + "\n")
+                print("=" * 70 + "\n")
             return 0
         except Exception as e:
             print(f"[-] Dump ingestion failed: {e}", file=sys.stderr)
@@ -512,11 +576,11 @@ def main(argv=None):
         if args.match:
             match = match_device_to_pairing(args.match)
             if match:
-                print(f"\n✅ Pairing record FOUND for UDID: {args.match}")
+                print(f"\n[+] Pairing record FOUND for UDID: {args.match}")
                 print(f"   Path: {match['path']}")
                 print(f"   Modified: {match.get('file_modified')}\n")
             else:
-                print(f"\n❌ No pairing record found on this PC for UDID: {args.match}\n")
+                print(f"\n[-] No pairing record found on this PC for UDID: {args.match}\n")
             return 0
         else:
             print(get_pairing_summary())
@@ -529,9 +593,9 @@ def main(argv=None):
             return e.code if e.code is not None else 1
 
         from correlator.search_engine import export_search_results, generate_search_report_html, search_sqlite_files
-        print("\n" + "═" * 70)
-        print(f" 🔍 Searching for keyword: '{args.keyword}' in {args.dir}")
-        print("═" * 70)
+        print("\n" + "=" * 70)
+        print(f" [+] Searching for keyword: '{args.keyword}' in {args.dir}")
+        print("=" * 70)
 
         hits = search_sqlite_files(args.dir, args.keyword)
         print(f" [+] Total Matches Found: {len(hits)}")
@@ -549,7 +613,7 @@ def main(argv=None):
             generate_search_report_html(hits, args.keyword, args.html)
             print(f" [+] HTML Search Report: {args.html}")
 
-        print("═" * 70 + "\n")
+        print("=" * 70 + "\n")
         return 0
 
     elif argv and argv[0] == "run":

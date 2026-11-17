@@ -12,6 +12,7 @@ across diverse encrypted mobile formats:
 
 import base64
 import binascii
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ import zlib
 
 from sqlcipher3 import dbapi2 as sqlcipher
 
-from correlator.sqlcipher_util import PROFILES, fingerprint, is_plain_sqlite, try_key
+from correlator.sqlcipher_util import PROFILES, export_decrypted, fingerprint, is_plain_sqlite, try_key
 from correlator.whatsapp_crypt import (
     CRYPTOGRAPHY_AVAILABLE,
     decrypt_whatsapp_crypt14_15,
@@ -32,9 +33,16 @@ from correlator.whatsapp_crypt import (
 )
 
 COMMON_PASSWORDS = [
-    "1234", "0000", "123456", "password", "apple", "iphone",
-    "1111", "1212", "qwerty", "12345678", "admin", "12345",
-    "test", "default", "root", "toor", "passcode", "secret",
+    # Top 4-digit PINs (statistically covers > 25% of consumer mobile passcodes)
+    "1234", "0000", "1111", "2580", "0852", "1212", "7777", "1004",
+    "2000", "4444", "2222", "6969", "9999", "3333", "5555", "6666",
+    "1122", "1313", "8888", "4321", "2001", "1010", "1230", "0123",
+    # Top 6-digit PINs
+    "123456", "000000", "111111", "123123", "654321", "112233", "121212",
+    "131313", "102030", "696969", "999999", "777777", "888888", "555555",
+    # Common passwords and forensic defaults
+    "password", "apple", "iphone", "admin", "12345", "test", "default",
+    "root", "toor", "passcode", "secret", "qwerty", "12345678", "mobile",
 ]
 
 HEX_32_PATTERN = re.compile(r"\b[0-9a-fA-F]{64}\b")
@@ -229,6 +237,8 @@ def carve_text_artifacts(db_path: Path, max_items: int = 150) -> List[Dict[str, 
     msg_pattern = re.compile(rb"[\x20-\x7E\t\r\n]{6,250}")
     phone_pattern = re.compile(r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b")
     email_pattern = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
+    url_pattern = re.compile(r"https?://[^\s<>\"']+")
+    crypto_pattern = re.compile(r"\b(?:0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{39,59})\b")
 
     for f in target_files:
         try:
@@ -237,22 +247,32 @@ def carve_text_artifacts(db_path: Path, max_items: int = 150) -> List[Dict[str, 
             for m in matches:
                 try:
                     s = m.decode("utf-8", errors="ignore").strip()
-                    # Filter out binary junk / repetitive chars
+                    # Filter out binary junk / repetitive chars / SQLite headers
                     if len(s) < 6 or len(set(s)) < 4:
                         continue
-                    if s.startswith("SQLite format") or s.startswith("PRAGMA"):
+                    if s.startswith("SQLite format") or s.startswith("PRAGMA") or s.startswith("CREATE TABLE"):
                         continue
                     if s in seen_texts:
                         continue
 
                     # Check for high forensic value
-                    item_type = "text"
+                    item_type = None
                     if phone_pattern.search(s):
                         item_type = "phone_reference"
                     elif email_pattern.search(s):
                         item_type = "email_reference"
+                    elif url_pattern.search(s):
+                        item_type = "url_reference"
+                    elif crypto_pattern.search(s):
+                        item_type = "crypto_address"
                     elif "{" in s and "}" in s and ":" in s:
                         item_type = "json_payload"
+                    elif " " in s and len(s) >= 8 and any(ch.isalpha() for ch in s):
+                        # Multi-word human readable text
+                        item_type = "text"
+
+                    if not item_type:
+                        continue
 
                     seen_texts.add(s)
                     artifacts.append({
@@ -398,3 +418,260 @@ def deep_unlock_database(
     # Step 5: Fallback to Raw String / WAL Artifact Carving
     outcome["carved_artifacts"] = carve_text_artifacts(db_path, max_items=100)
     return outcome
+
+
+# ── 5. Forensic Orphan Database Recovery Engine ───────────────────────
+
+@dataclass
+class OrphanRecoveryResult:
+    database_path: str
+    database_name: str
+    status: str  # "decrypted", "partially_carved", "locked"
+    recovery_method: Optional[str] = None
+    key_fingerprint: Optional[str] = None
+    key_bytes: Optional[bytes] = None
+    key_hex: Optional[str] = None
+    profile: Optional[str] = None
+    tables: List[str] = field(default_factory=list)
+    keys_tested_count: int = 0
+    scraped_secrets_count: int = 0
+    carved_artifacts_count: int = 0
+    carved_artifacts: List[Dict[str, Any]] = field(default_factory=list)
+    decrypted_export_path: Optional[str] = None
+    evidence_json_path: Optional[str] = None
+    evidence_csv_path: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        if d.get("key_bytes"):
+            d["key_bytes"] = d["key_bytes"].hex()
+        return d
+
+
+def export_orphan_artifacts_json(artifacts: List[Dict[str, Any]], out_path: Path | str) -> None:
+    """Exports carved orphan artifacts to JSON."""
+    p = Path(out_path).resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(artifacts, f, indent=2)
+
+
+def export_orphan_artifacts_csv(artifacts: List[Dict[str, Any]], out_path: Path | str) -> None:
+    """Exports carved orphan artifacts to CSV spreadsheet."""
+    p = Path(out_path).resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    header = ["Record ID", "Database", "Artifact Type", "Confidence", "Content Preview", "Columns"]
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(",".join(header) + "\n")
+        for a in artifacts:
+            cols_str = " ; ".join(str(c) for c in a.get("columns", []))
+            row = [
+                f'"{a.get("record_id", "")}"',
+                f'"{a.get("database", "")}"',
+                f'"{a.get("type", "")}"',
+                f"{a.get('confidence', 0.8):.2f}",
+                f'"{str(a.get("content", "")).replace(chr(34), chr(39))}"',
+                f'"{cols_str.replace(chr(34), chr(39))}"',
+            ]
+            f.write(",".join(row) + "\n")
+
+
+def recover_orphan_database(
+    db_path: Path | str,
+    container_dir: Optional[Path | str] = None,
+    wordlist_path: Optional[Path | str] = None,
+    extra_passwords: Optional[List[str]] = None,
+    extra_keys: Optional[List[bytes]] = None,
+    out_dir: Optional[Path | str] = None,
+    force_carve: bool = True,
+) -> OrphanRecoveryResult:
+    """
+    Forensic Orphan Database Recovery Engine:
+    Executes a 3-tier forensic recovery escalation on locked/orphan databases:
+    Tier 1: Container Secret Harvester (scrapes plists, UserDefaults, JSON configs, binary keys)
+    Tier 2: Smart Passcode & Wordlist Derivations (common 4-digit / 6-digit iOS PINs & wordlist)
+    Tier 3: Unallocated Slack & WAL Residual Carving (recovers chat messages, phone numbers, and keys)
+    """
+    p = Path(db_path).resolve()
+    db_name = p.name
+
+    result = OrphanRecoveryResult(
+        database_path=str(p),
+        database_name=db_name,
+        status="locked",
+    )
+
+    if not p.is_file():
+        return result
+
+    # 1. Identify Container Root if not provided
+    c_dir = Path(container_dir).resolve() if container_dir else None
+    if c_dir is None or not c_dir.is_dir():
+        curr = p.parent
+        for _ in range(4):
+            if curr == curr.parent:
+                break
+            if (curr / ".com.apple.mobile_container_manager.metadata.plist").is_file():
+                c_dir = curr
+                break
+            if curr.name in ("Documents", "Library", "AppGroup") or (curr / "Library").is_dir():
+                c_dir = curr
+                break
+            curr = curr.parent
+
+    # 2. Candidate Gathering
+    candidate_pool: List[Dict[str, Any]] = []
+    scraped_count = 0
+
+    if extra_keys:
+        for k in extra_keys:
+            candidate_pool.append({
+                "key_bytes": k,
+                "fingerprint": fingerprint(k),
+                "source": "extra_keys",
+                "method": "manual_supplied_key",
+            })
+
+    if c_dir and c_dir.is_dir():
+        scraped = scrape_container_secrets(c_dir)
+        scraped_count = len(scraped)
+        candidate_pool.extend(scraped)
+
+    # Wordlist passwords
+    passwords_list: List[str] = []
+    if extra_passwords:
+        passwords_list.extend(extra_passwords)
+    if wordlist_path:
+        w_path = Path(wordlist_path).resolve()
+        if w_path.is_file():
+            try:
+                words = [w.strip() for w in w_path.read_text(encoding="utf-8", errors="ignore").splitlines() if w.strip()]
+                passwords_list.extend(words)
+            except Exception:
+                pass
+
+    smart_keys = generate_smart_keys(passwords=passwords_list)
+    candidate_pool.extend(smart_keys)
+
+    result.keys_tested_count = len(candidate_pool)
+    result.scraped_secrets_count = scraped_count
+
+    # 3. Check if plain SQLite first
+    if is_plain_sqlite(p):
+        result.status = "plain"
+        result.recovery_method = "plain_sqlite"
+        try:
+            con = sqlite3.connect(f"{p.as_uri()}?mode=ro", uri=True)
+            cur = con.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+            result.tables = [r[0] for r in cur.fetchall()]
+            con.close()
+        except Exception:
+            pass
+        return result
+
+    # 4. Cryptographic Unlocking Attempt across all profiles using read-only try_key
+    unlocked_profile = None
+    unlocked_key = None
+    unlocked_method = None
+
+    for cand in candidate_pool:
+        kb = cand["key_bytes"]
+        for prof in PROFILES:
+            if try_key(p, kb, prof):
+                unlocked_profile = prof
+                unlocked_key = kb
+                unlocked_method = cand.get("method", "smart_derivation")
+                result.status = "decrypted"
+                result.recovery_method = unlocked_method
+                result.key_bytes = kb
+                result.key_hex = kb.hex()
+                result.key_fingerprint = cand["fingerprint"]
+                result.profile = prof["name"]
+
+                # Extract table list
+                try:
+                    uri = p.as_uri() + "?mode=ro"
+                    con = sqlcipher.connect(uri, uri=True)
+                    con.execute(f"PRAGMA key = \"x'{kb.hex()}'\";")
+                    for pragma in prof["pragmas"]:
+                        con.execute(pragma)
+                    cur = con.cursor()
+                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+                    result.tables = [r[0] for r in cur.fetchall()]
+                    con.close()
+                except Exception:
+                    pass
+                break
+        if result.status == "decrypted":
+            break
+
+    # If successfully decrypted and out_dir specified, export decrypted database
+    if result.status == "decrypted" and out_dir and unlocked_key and unlocked_profile:
+        out_p = Path(out_dir).resolve()
+        out_p.mkdir(parents=True, exist_ok=True)
+        export_dest = out_p / f"{p.stem}_decrypted.sqlite"
+        try:
+            export_decrypted(p, export_dest, unlocked_key, unlocked_profile)
+            result.decrypted_export_path = str(export_dest)
+        except Exception:
+            pass
+        return result
+
+    # 5. Tier 3: Residual Carving from Slack & WAL if still locked
+    if force_carve and result.status == "locked":
+        all_carved: List[Dict[str, Any]] = []
+
+        # A. Structured B-Tree Freeblock and Slack Carving
+        try:
+            from correlator.carver import carve_sqlite_database
+            deleted_recs = carve_sqlite_database(p)
+            for dr in deleted_recs:
+                all_carved.append({
+                    "record_id": dr.record_id,
+                    "database": dr.database,
+                    "type": dr.source_type,
+                    "content": dr.raw_text,
+                    "confidence": dr.confidence,
+                    "offset": dr.offset_in_page,
+                    "columns": dr.columns,
+                })
+        except Exception:
+            pass
+
+        # B. Regex & Text Artifact Carving
+        text_arts = carve_text_artifacts(p, max_items=200)
+        print(f"DEBUG text_arts: count={len(text_arts)}")
+        seen_contents = {str(c["content"]).lower() for c in all_carved}
+        for ta in text_arts:
+            cnt = ta["content"]
+            if cnt.lower() not in seen_contents:
+                seen_contents.add(cnt.lower())
+                all_carved.append({
+                    "record_id": f"ORPHAN-STR-{len(all_carved)+1}",
+                    "database": db_name,
+                    "type": ta.get("type", "text"),
+                    "content": cnt,
+                    "confidence": 0.80,
+                    "offset": 0,
+                    "columns": [cnt],
+                })
+
+        result.carved_artifacts = all_carved
+        result.carved_artifacts_count = len(all_carved)
+        if all_carved:
+            result.status = "partially_carved"
+            result.recovery_method = "residual_slack_carving"
+
+        # Export carved orphan evidence if out_dir given
+        if out_dir and all_carved:
+            out_p = Path(out_dir).resolve()
+            out_p.mkdir(parents=True, exist_ok=True)
+            j_path = out_p / f"{p.stem}_carved_evidence.json"
+            c_path = out_p / f"{p.stem}_carved_evidence.csv"
+            export_orphan_artifacts_json(all_carved, j_path)
+            export_orphan_artifacts_csv(all_carved, c_path)
+            result.evidence_json_path = str(j_path)
+            result.evidence_csv_path = str(c_path)
+
+    return result

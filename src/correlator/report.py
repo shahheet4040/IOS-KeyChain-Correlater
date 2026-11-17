@@ -272,6 +272,30 @@ def generate_html_report(
         </div>
             """
 
+        orphan_json = out_p / "orphan_carved_evidence.json"
+        orphan_csv = out_p / "orphan_carved_evidence.csv"
+        orphan_dir = out_p / "orphan_recovery"
+        if not orphan_json.exists() and (orphan_dir / "orphan_carved_evidence.json").exists():
+            orphan_json = orphan_dir / "orphan_carved_evidence.json"
+        if not orphan_csv.exists() and (orphan_dir / "orphan_carved_evidence.csv").exists():
+            orphan_csv = orphan_dir / "orphan_carved_evidence.csv"
+
+        if orphan_json.exists() or orphan_csv.exists():
+            geo_banner_html += f"""
+        <div style="margin-top:16px; background:#161b22; border:1px solid #30363d; border-radius:10px; padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                <div>
+                    <h2 style="color:#ffffff; margin:0 0 6px 0; font-size:1.25em;">🔓 Orphan &amp; Locked Database Evidence Recovery</h2>
+                    <p style="color:#8b949e; margin:0; font-size:0.9em;">Carved residual plaintext artifacts, tokens, credentials, and slack space recovered from unencrypted companion WAL logs and database freelists.</p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <a href="{html.escape(orphan_csv.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 Carved Evidence CSV</a>
+                    <a href="{html.escape(orphan_json.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 Carved JSON</a>
+                </div>
+            </div>
+        </div>
+            """
+
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>

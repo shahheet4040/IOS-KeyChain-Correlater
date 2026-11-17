@@ -117,3 +117,25 @@ def test_cli_subcommand_evaluate():
         "--ground-truth", str(gt_file),
     ])
     assert ret == 0
+
+
+def test_cli_subcommand_doctor():
+    ret = main(["doctor"])
+    assert ret == 0
+
+
+def test_cli_subcommand_orphan(tmp_path):
+    base = Path(__file__).resolve().parent.parent / "out" / "fake"
+    extraction_root = base / "extraction"
+    dbs = list(extraction_root.rglob("*.db"))
+    assert len(dbs) > 0
+    target_db = dbs[0]
+    out_dir = tmp_path / "orphan_test"
+
+    ret = main([
+        "orphan",
+        "--db", str(target_db),
+        "--out", str(out_dir),
+    ])
+    assert ret == 0
+    assert out_dir.is_dir()
