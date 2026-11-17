@@ -233,7 +233,7 @@ def extract_page_freeblocks(page_bytes: bytes, page_num: int, db_name: str) -> L
             rec_res = parse_sqlite_record(fb_payload, off)
             if rec_res:
                 cols, _ = rec_res
-                has_text = any(isinstance(c, str) and len(c.strip()) > 1 for c in cols)
+                has_text = any(isinstance(c, str) and len(c.strip("\x00 \t\r\n")) > 1 and any(ch.isalnum() for ch in c) for c in cols)
                 if has_text:
                     preview = " | ".join(str(c) for c in cols if c is not None)
                     records.append(DeletedRecord(
@@ -296,7 +296,7 @@ def extract_unallocated_slack(page_bytes: bytes, page_num: int, db_name: str) ->
                 rec_res = parse_sqlite_record(slack_bytes, idx)
                 if rec_res:
                     cols, consumed = rec_res
-                    has_text = any(isinstance(c, str) and len(c.strip()) > 2 for c in cols)
+                    has_text = any(isinstance(c, str) and len(c.strip("\x00 \t\r\n")) > 2 and any(ch.isalnum() for ch in c) for c in cols)
                     if has_text:
                         preview = " | ".join(str(c) for c in cols if c is not None)
                         records.append(DeletedRecord(
@@ -379,7 +379,7 @@ def extract_freelist_records(db_bytes: bytes, page_size: int, db_name: str) -> L
                 rec_res = parse_sqlite_record(leaf_bytes, idx)
                 if rec_res:
                     cols, consumed = rec_res
-                    has_text = any(isinstance(c, str) and len(c.strip()) > 2 for c in cols)
+                    has_text = any(isinstance(c, str) and len(c.strip("\x00 \t\r\n")) > 2 and any(ch.isalnum() for ch in c) for c in cols)
                     if has_text:
                         preview = " | ".join(str(c) for c in cols if c is not None)
                         records.append(DeletedRecord(
@@ -503,13 +503,13 @@ def carve_sqlite_database(db_path: Path | str, wal_path: Optional[Path | str] = 
             continue
 
         # Clean preview text
-        clean_text = rec.raw_text.strip()
+        clean_text = rec.raw_text.strip("\x00 \t\r\n|")
         # Remove unprintable / non-ascii prefix control characters
         clean_text = re.sub(r"^[\x00-\x1F\x7F]+", "", clean_text).strip()
         rec.raw_text = clean_text
 
         norm_prev = clean_text.lower()
-        if norm_prev in seen_previews or len(norm_prev) < 4:
+        if norm_prev in seen_previews or len(norm_prev) < 4 or not any(ch.isalnum() for ch in norm_prev):
             continue
         seen_previews.add(norm_prev)
         truly_deleted.append(rec)

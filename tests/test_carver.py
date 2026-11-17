@@ -54,6 +54,9 @@ def test_parse_sqlite_record():
 def test_carve_deleted_sqlite_data(tmp_path):
     db_file = tmp_path / "test_messages.sqlite"
     con = sqlite3.connect(str(db_file))
+    # Disable secure_delete so SQLite leaves deleted records in freeblocks / slack space
+    # (defaults to ON on Debian/Ubuntu due to -DSQLITE_SECURE_DELETE=1)
+    con.execute("PRAGMA secure_delete = OFF;")
     con.execute("CREATE TABLE chats (id INTEGER PRIMARY KEY, sender TEXT, body TEXT);")
     con.execute("INSERT INTO chats VALUES (1, 'Eve', 'Active message that is not deleted');")
     con.execute("INSERT INTO chats VALUES (2, 'Bob', 'TOP_SECRET: Meeting at the dock at midnight');")
@@ -84,6 +87,8 @@ def test_carve_directory_and_exports(tmp_path):
     db_path = db_dir / "notes.db"
 
     con = sqlite3.connect(str(db_path))
+    # Disable secure_delete so SQLite leaves deleted records in freeblocks / slack space
+    con.execute("PRAGMA secure_delete = OFF;")
     con.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, title TEXT, content TEXT);")
     con.execute("INSERT INTO notes VALUES (1, 'Keep', 'Live note text');")
     con.execute("INSERT INTO notes VALUES (2, 'BurnAfterReading', 'Passcode to safe is 482910');")
