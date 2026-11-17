@@ -206,7 +206,7 @@ def test_afc_file_filter(tmp_path):
     mock_lockdown = MagicMock()
 
     with patch("correlator.acquisition.PYMOBILEDEVICE3_AVAILABLE", True), \
-         patch("correlator.acquisition.AfcService", return_value=mock_afc):
+         patch("correlator.acquisition.AfcService", return_value=mock_afc, create=True):
         pfb = PasswordFreeBackup(mock_lockdown, "test-udid")
         result = pfb.partial_afc_pull(tmp_path)
 

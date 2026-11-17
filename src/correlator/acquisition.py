@@ -36,6 +36,13 @@ try:
     PYMOBILEDEVICE3_AVAILABLE = True
 except ImportError:
     PYMOBILEDEVICE3_AVAILABLE = False
+    NoDeviceConnectedError = Exception
+    PyMobileDevice3Exception = Exception
+    LockdownClient = None
+    create_using_usbmux = None
+    AfcService = None
+    Mobilebackup2Service = None
+    usbmux_list_devices = None
 
 
 # ── Triage State Machine & Access Tiers ──────────────────────────────

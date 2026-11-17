@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -46,22 +46,8 @@ jobs:
           python harness/make_fake_extraction.py --out out/fake
 
       - name: Run Pytest Forensic Test Suite
-        shell: bash
         run: |
-          if python -m pytest -v tests/ --tb=short > test_failure.txt 2>&1; then
-            cat test_failure.txt
-          else
-            cat test_failure.txt
-            if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.12" ]; then
-              git config user.name "CI Bot"
-              git config user.email "ci@bot.com"
-              git checkout -B ci-logs
-              git add -f test_failure.txt
-              git commit -m "ci: capture failed test log" || true
-              git push -f origin ci-logs || true
-            fi
-            exit 1
-          fi
+          python -m pytest -v tests/ --tb=short
 
       - name: Verify CLI Ingestion & Decryption Pipeline
         run: |
