@@ -1848,9 +1848,12 @@ class ForensicCorrelatorGUI:
 
 
 def main():
-    root = tk.Tk()
-    app = ForensicCorrelatorGUI(root)
-    root.mainloop()
+    try:
+        root = tk.Tk()
+        app = ForensicCorrelatorGUI(root)
+        root.mainloop()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

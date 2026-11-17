@@ -10,6 +10,15 @@ from correlator.pipeline import IntegrityError, format_table, run, run_pipeline
 
 
 def main(argv=None):
+    if sys.platform == "win32":
+        try:
+            if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     if argv is None:
         argv = sys.argv[1:]
 
