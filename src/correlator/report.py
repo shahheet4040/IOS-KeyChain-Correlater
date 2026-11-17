@@ -184,6 +184,30 @@ def generate_html_report(
 
     rows_joined = "\n".join(table_rows)
 
+    geo_banner_html = ""
+    if out_file:
+        out_p = Path(out_file).resolve().parent
+        map_p = out_p / "route_map.html"
+        geojson_p = out_p / "route.geojson"
+        kml_p = out_p / "route.kml"
+
+        if map_p.exists() or geojson_p.exists():
+            geo_banner_html = f"""
+        <div style="margin-top:32px; background:#161b22; border:1px solid #30363d; border-radius:10px; padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                <div>
+                    <h2 style="color:#ffffff; margin:0 0 6px 0; font-size:1.25em;">🌍 Forensic Geospatial &amp; Movement Timeline Map</h2>
+                    <p style="color:#8b949e; margin:0; font-size:0.9em;">Interactive GPS route reconstructed from photo EXIF tags, Apple Significant Locations, and messaging shares.</p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <a href="{html.escape(map_p.name)}" target="_blank" style="background:#238636; color:#ffffff; text-decoration:none; padding:8px 16px; border-radius:6px; font-weight:bold; font-size:0.9em;">🌐 Open Interactive Map</a>
+                    <a href="{html.escape(kml_p.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 Google Earth KML</a>
+                    <a href="{html.escape(geojson_p.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 GeoJSON</a>
+                </div>
+            </div>
+        </div>
+            """
+
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -350,6 +374,8 @@ def generate_html_report(
                 </tbody>
             </table>
         </div>
+
+        {geo_banner_html}
 
         <!-- ═══════════════════════════════════════════════════════
              FORENSIC PROVENANCE & STEP-BY-STEP PROCESS MAP

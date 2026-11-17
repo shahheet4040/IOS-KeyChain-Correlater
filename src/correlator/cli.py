@@ -91,6 +91,12 @@ def main(argv=None):
     web_parser.add_argument("--host", default="127.0.0.1", help="Web server host binding (default: 127.0.0.1)")
     web_parser.add_argument("--no-browser", action="store_true", help="Do not automatically launch web browser")
 
+    # 'map' subcommand (Forensic GPS & Movement Route Analysis)
+    map_parser = subparsers.add_parser("map", help="Harvest GPS waypoints and generate interactive movement route maps")
+    map_parser.add_argument("--root", "-r", required=True, type=Path, help="Path to iOS extraction root or media folder")
+    map_parser.add_argument("--out", "-o", default=Path("out/geospatial"), type=Path, help="Output directory for map and route files")
+    map_parser.add_argument("--open", action="store_true", help="Automatically open interactive map in web browser")
+
     # Top-level direct arguments (backward-compatibility when subcommand omitted)
     parser.add_argument("--root", "--extraction", "-e", dest="root", type=Path, help="Path to iOS extraction root")
     parser.add_argument("--keychain", "-k", type=Path, help="Path to normalized keychain JSON export")
@@ -114,6 +120,54 @@ def main(argv=None):
     if argv and argv[0] == "gui":
         from correlator.gui import main as gui_main
         gui_main()
+        return 0
+
+    if argv and argv[0] == "map":
+        try:
+            args = map_parser.parse_args(argv[1:])
+        except SystemExit as e:
+            return e.code if e.code is not None else 1
+
+        from correlator.geospatial import (
+            export_csv,
+            export_geojson,
+            export_kml,
+            generate_interactive_map_html,
+            harvest_all_locations,
+        )
+
+        print("\n" + "=" * 70)
+        print(" 🌍 iOS Forensic Geospatial & GPS Movement Engine")
+        print("=" * 70)
+        print(f" [*] Scanning extraction root: {args.root}")
+
+        points, summary = harvest_all_locations(args.root)
+        out_dir = Path(args.out).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        map_html = out_dir / "route_map.html"
+        geojson_f = out_dir / "route.geojson"
+        kml_f = out_dir / "route.kml"
+        csv_f = out_dir / "route.csv"
+
+        generate_interactive_map_html(points, summary=summary, out_path=map_html)
+        export_geojson(points, geojson_f)
+        export_kml(points, kml_f, case_name=out_dir.name)
+        export_csv(points, csv_f)
+
+        print(f" [+] Harvested Points : {len(points)}")
+        print(f" [+] Total Distance   : {summary.get('total_distance_km', 0.0)} km")
+        print(f" [+] Max Velocity     : {summary.get('max_speed_kmh', 0.0)} km/h")
+        print(f" [+] Interactive Map  : {map_html}")
+        print(f" [+] GeoJSON (QGIS)   : {geojson_f}")
+        print(f" [+] KML (Google Earth): {kml_f}")
+        print(f" [+] CSV Spreadsheet  : {csv_f}")
+        print("=" * 70 + "\n")
+
+        if args.open:
+            import webbrowser
+            webbrowser.open(map_html.as_uri())
+
         return 0
 
     if argv and argv[0] == "doctor":

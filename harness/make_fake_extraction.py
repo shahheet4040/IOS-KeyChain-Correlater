@@ -39,6 +39,11 @@ def make_db_with_wal(path: Path, key: bytes, pragmas: list, is_plain: bool):
     # Create schema and initial commit
     con.execute("CREATE TABLE t(x);")
     con.execute("CREATE TABLE messages(id INTEGER, content TEXT);")
+    if "ChatStorage" in path.name:
+        con.execute("CREATE TABLE IF NOT EXISTS ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZMESSAGEDATE REAL, ZLATITUDE REAL, ZLONGITUDE REAL, ZTEXT TEXT);")
+        con.execute("INSERT INTO ZWAMESSAGE VALUES (1, 100000.0, 37.7749, -122.4194, 'Meeting point near downtown');")
+        con.execute("INSERT INTO ZWAMESSAGE VALUES (2, 100600.0, 37.7880, -122.4075, 'Union square checkpoint');")
+        con.execute("INSERT INTO ZWAMESSAGE VALUES (3, 101800.0, 37.8080, -122.4177, 'Fishermans Wharf safehouse');")
     for i in range(10): 
         con.execute("INSERT INTO t VALUES (?)", (i,))
         con.execute("INSERT INTO messages VALUES (?, ?)", (i, f"message_{i}"))

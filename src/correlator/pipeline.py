@@ -306,6 +306,47 @@ def execute_pipeline(
             _ev_dir = (html_report.parent / "decrypted_export").resolve()
         generate_html_report(results, extraction_path, keychain_path, out_file=html_report, export_dir=_ev_dir, provenance=provenance_timeline)
 
+    # Geospatial & GPS route trail intelligence
+    geo_points = []
+    geo_summary = {}
+    geo_files = {}
+    try:
+        from correlator.geospatial import (
+            analyze_movement_trail,
+            export_csv,
+            export_geojson,
+            export_kml,
+            generate_interactive_map_html,
+            harvest_all_locations,
+        )
+        geo_points, geo_summary = harvest_all_locations(extraction_path)
+        if export_dir and Path(export_dir).is_dir():
+            exp_pts, _ = harvest_all_locations(export_dir)
+            if exp_pts:
+                geo_points.extend(exp_pts)
+                geo_points, geo_summary = analyze_movement_trail(geo_points)
+
+        if out_dir and geo_points:
+            out_p = Path(out_dir).resolve()
+            map_html_path = out_p / "route_map.html"
+            geojson_path = out_p / "route.geojson"
+            kml_path = out_p / "route.kml"
+            csv_path = out_p / "route.csv"
+
+            generate_interactive_map_html(geo_points, summary=geo_summary, out_path=map_html_path)
+            export_geojson(geo_points, geojson_path)
+            export_kml(geo_points, kml_path, case_name=out_p.name)
+            export_csv(geo_points, csv_path)
+
+            geo_files = {
+                "map_html": map_html_path,
+                "geojson": geojson_path,
+                "kml": kml_path,
+                "csv": csv_path,
+            }
+    except Exception as e:
+        print(f"  [!] Geospatial analysis notice: {e}", file=sys.stderr)
+
     return {
         "results": results,
         "total_databases": len(results),
@@ -317,6 +358,11 @@ def execute_pipeline(
         "report_html_path": html_report,
         "report_data": json_data,
         "provenance_map": provenance_timeline,
+        "geospatial": {
+            "points": geo_points,
+            "summary": geo_summary,
+            "files": geo_files,
+        },
     }
 
 

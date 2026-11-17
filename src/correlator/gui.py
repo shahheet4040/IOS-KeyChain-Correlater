@@ -598,7 +598,12 @@ class ForensicCorrelatorGUI:
         self.notebook.add(self.tab_provenance, text=" 🗺️ Process Map ")
         self._setup_provenance_tab(self.tab_provenance)
 
-        # Tab 8: Execution Logs
+        # Tab 8: Geospatial & Route Map
+        self.tab_geospatial = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(self.tab_geospatial, text=" 🌍 GPS Movement Map ")
+        self._setup_geospatial_tab(self.tab_geospatial)
+
+        # Tab 9: Execution Logs
         self.tab_logs = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self.tab_logs, text=" 📜 Execution Logs ")
         self._setup_logs_view(self.tab_logs)
@@ -1377,7 +1382,185 @@ class ForensicCorrelatorGUI:
                 ),
             )
 
-    # ── Tab 8: Execution Logs ────────────────────────────────────────
+    # ── Tab 8: Geospatial & Route Map ────────────────────────────────
+
+    def _setup_geospatial_tab(self, parent):
+        self.current_geo_points = []
+        self.current_geo_summary = {}
+
+        # Top Control Bar
+        bar = ttk.Frame(parent)
+        bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(bar, text="Filter:").pack(side=tk.LEFT, padx=(0, 4))
+        self.geo_filter_var = tk.StringVar()
+        geo_entry = ttk.Entry(bar, textvariable=self.geo_filter_var, width=22)
+        geo_entry.pack(side=tk.LEFT, padx=4)
+        geo_entry.bind("<KeyRelease>", lambda e: self._filter_geo_table())
+
+        ttk.Button(bar, text="🔍 Scan for GPS", command=self._scan_gps_action).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="🌐 Open Interactive Map", style="Primary.TButton", command=self._open_interactive_map).pack(side=tk.LEFT, padx=4)
+
+        ttk.Button(bar, text="📥 Export KML", command=self._export_geo_kml).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(bar, text="📥 Export GeoJSON", command=self._export_geo_geojson).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(bar, text="📊 Export CSV", command=self._export_geo_csv).pack(side=tk.RIGHT, padx=4)
+
+        # KPI HUD Bar
+        hud = ttk.Frame(parent, style="Header.TFrame", padding=6)
+        hud.pack(fill=tk.X, pady=(0, 6))
+
+        self.lbl_geo_distance = ttk.Label(hud, text="Distance: 0.0 km", font=("Segoe UI", 9, "bold"))
+        self.lbl_geo_distance.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_geo_points = ttk.Label(hud, text="Waypoints: 0", font=("Segoe UI", 9, "bold"))
+        self.lbl_geo_points.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_geo_speed = ttk.Label(hud, text="Max Velocity: 0.0 km/h", font=("Segoe UI", 9, "bold"))
+        self.lbl_geo_speed.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_geo_dates = ttk.Label(hud, text="Time Span: N/A", font=("Segoe UI", 9))
+        self.lbl_geo_dates.pack(side=tk.LEFT, padx=8)
+
+        # Table
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        cols = ("id", "timestamp", "lat", "lon", "alt", "speed", "mode", "source", "file")
+        self.geo_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
+
+        headers = {
+            "id": ("ID", 100),
+            "timestamp": ("Timestamp (UTC)", 160),
+            "lat": ("Latitude", 100),
+            "lon": ("Longitude", 100),
+            "alt": ("Alt (m)", 60),
+            "speed": ("Speed (km/h)", 90),
+            "mode": ("Inferred Mode", 120),
+            "source": ("Evidence Source", 120),
+            "file": ("Source Origin File", 180),
+        }
+        for col, (title, width) in headers.items():
+            self.geo_tree.heading(col, text=title)
+            self.geo_tree.column(col, width=width, anchor=tk.W)
+
+        scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.geo_tree.yview)
+        scroll_x = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.geo_tree.xview)
+        self.geo_tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+
+        self.geo_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        scroll_y.grid(row=0, column=1, sticky=tk.NS)
+        scroll_x.grid(row=1, column=0, sticky=tk.EW)
+
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+    def _populate_geospatial_table(self, points=None, summary=None):
+        if points is not None:
+            self.current_geo_points = points
+        if summary is not None:
+            self.current_geo_summary = summary
+
+        dist_km = self.current_geo_summary.get("total_distance_km", 0.0)
+        max_spd = self.current_geo_summary.get("max_speed_kmh", 0.0)
+        start_d = self.current_geo_summary.get("start_time_utc", "N/A")
+        end_d = self.current_geo_summary.get("end_time_utc", "N/A")
+
+        self.lbl_geo_distance.config(text=f"Distance: {dist_km} km")
+        self.lbl_geo_points.config(text=f"Waypoints: {len(self.current_geo_points)}")
+        self.lbl_geo_speed.config(text=f"Max Velocity: {max_spd} km/h")
+        self.lbl_geo_dates.config(text=f"Time Span: {start_d[:10] if start_d else 'N/A'} -> {end_d[:10] if end_d else 'N/A'}")
+
+        self._filter_geo_table()
+
+    def _filter_geo_table(self):
+        self.geo_tree.delete(*self.geo_tree.get_children())
+        q = self.geo_filter_var.get().lower().strip()
+
+        for p in self.current_geo_points:
+            pt_id = str(getattr(p, "point_id", ""))
+            ts = str(getattr(p, "timestamp_utc", ""))
+            lat = f"{getattr(p, 'latitude', 0.0):.6f}"
+            lon = f"{getattr(p, 'longitude', 0.0):.6f}"
+            alt = str(getattr(p, "altitude_meters", "") or "")
+            spd = f"{getattr(p, 'speed_kmh', 0.0) or 0.0:.1f}"
+            mode = str(getattr(p, "inferred_mode", "") or "")
+            src = str(getattr(p, "source_type", "") or "")
+            fname = str(getattr(p, "file_name", "") or "")
+
+            row_str = f"{pt_id} {ts} {lat} {lon} {mode} {src} {fname}".lower()
+            if not q or q in row_str:
+                self.geo_tree.insert(
+                    "",
+                    tk.END,
+                    values=(pt_id, ts, lat, lon, alt, spd, mode, src, fname),
+                )
+
+    def _scan_gps_action(self):
+        ext_path = self.extraction_var.get().strip()
+        if not ext_path or not Path(ext_path).exists():
+            messagebox.showwarning("Geospatial Scan", "Please select a valid iOS Extraction folder first.")
+            return
+
+        self._log("[*] Scanning extraction for GPS waypoints and photo EXIF metadata...")
+        try:
+            from correlator.geospatial import harvest_all_locations
+            pts, sm = harvest_all_locations(ext_path)
+            self._populate_geospatial_table(pts, sm)
+            self._log(f"[+] Harvested {len(pts)} GPS coordinates ({sm.get('total_distance_km', 0.0)} km traveled).")
+            if not pts:
+                messagebox.showinfo("Geospatial Scan", "No GPS coordinates or EXIF location tags were found in this extraction.")
+            else:
+                messagebox.showinfo("Geospatial Scan", f"Discovered {len(pts)} GPS waypoints across evidence sources!\nTotal Route Distance: {sm.get('total_distance_km', 0.0)} km")
+        except Exception as e:
+            self._log(f"[-] Geospatial scan error: {e}")
+            messagebox.showerror("Error", f"Could not complete GPS scan: {e}")
+
+    def _open_interactive_map(self):
+        out_root = Path(self.out_dir_var.get())
+        map_p = out_root / "route_map.html"
+
+        if not map_p.exists() and self.current_geo_points:
+            from correlator.geospatial import generate_interactive_map_html
+            map_p.parent.mkdir(parents=True, exist_ok=True)
+            generate_interactive_map_html(self.current_geo_points, summary=self.current_geo_summary, out_path=map_p)
+
+        if map_p.exists():
+            import webbrowser
+            webbrowser.open(map_p.resolve().as_uri())
+        else:
+            messagebox.showinfo("Interactive Map", "No GPS route map found. Click 'Scan for GPS' or run analysis first.")
+
+    def _export_geo_kml(self):
+        if not self.current_geo_points:
+            messagebox.showwarning("Export KML", "No GPS waypoints to export. Run analysis or scan first.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".kml", filetypes=[("Google Earth KML", "*.kml")])
+        if dest:
+            from correlator.geospatial import export_kml
+            export_kml(self.current_geo_points, dest, case_name="iOS Forensic Evidence")
+            messagebox.showinfo("Export Complete", f"Google Earth KML saved successfully to:\n{dest}")
+
+    def _export_geo_geojson(self):
+        if not self.current_geo_points:
+            messagebox.showwarning("Export GeoJSON", "No GPS waypoints to export. Run analysis or scan first.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".geojson", filetypes=[("GeoJSON File", "*.geojson")])
+        if dest:
+            from correlator.geospatial import export_geojson
+            export_geojson(self.current_geo_points, dest)
+            messagebox.showinfo("Export Complete", f"GeoJSON route saved successfully to:\n{dest}")
+
+    def _export_geo_csv(self):
+        if not self.current_geo_points:
+            messagebox.showwarning("Export CSV", "No GPS waypoints to export. Run analysis or scan first.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Spreadsheet", "*.csv")])
+        if dest:
+            from correlator.geospatial import export_csv
+            export_csv(self.current_geo_points, dest)
+            messagebox.showinfo("Export Complete", f"CSV spreadsheet saved successfully to:\n{dest}")
+
+    # ── Tab 9: Execution Logs ────────────────────────────────────────
 
     def _setup_logs_view(self, parent):
         top = ttk.Frame(parent)
@@ -1572,6 +1755,8 @@ class ForensicCorrelatorGUI:
         # Populate Social Network Graph & Entity tabs
         self._populate_network_table()
         self._populate_entities_table()
+        geo_data = result.get("geospatial", {})
+        self._populate_geospatial_table(geo_data.get("points"), geo_data.get("summary"))
 
         messagebox.showinfo(
             "Analysis Complete",
