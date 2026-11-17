@@ -367,6 +367,41 @@ def execute_pipeline(
     except Exception as e:
         print(f"  [!] Deleted data carving notice: {e}", file=sys.stderr)
 
+    # Master cross-application timeline & correlation
+    timeline_events_all: List[Any] = []
+    timeline_clusters: List[Any] = []
+    timeline_files: Dict[str, Path] = {}
+    timeline_summary: Dict[str, Any] = {}
+    try:
+        from correlator.timeline import (
+            export_timeline_csv,
+            export_timeline_json,
+            extract_master_timeline,
+            generate_master_timeline_html,
+        )
+        target_timeline_dir = export_dir if export_dir and Path(export_dir).is_dir() else extraction_path
+        t_data = extract_master_timeline(
+            evidence_directory=target_timeline_dir,
+            geo_points=geo_points,
+            carved_records=carved_records_all,
+        )
+        timeline_events_all = t_data.get("events", [])
+        timeline_clusters = t_data.get("clusters", [])
+        timeline_summary = t_data.get("summary", {})
+
+        if out_dir and timeline_events_all:
+            out_p = Path(out_dir).resolve()
+            t_html = out_p / "master_timeline.html"
+            t_json = out_p / "timeline.json"
+            t_csv = out_p / "timeline.csv"
+
+            generate_master_timeline_html(timeline_events_all, clusters=timeline_clusters, out_path=t_html)
+            export_timeline_json(timeline_events_all, t_json, clusters=timeline_clusters)
+            export_timeline_csv(timeline_events_all, t_csv)
+            timeline_files = {"html": t_html, "json": t_json, "csv": t_csv}
+    except Exception as e:
+        print(f"  [!] Master timeline analysis notice: {e}", file=sys.stderr)
+
     return {
         "results": results,
         "total_databases": len(results),
@@ -387,6 +422,13 @@ def execute_pipeline(
             "total_recovered": len(carved_records_all),
             "records": carved_records_all,
             "files": carved_files,
+        },
+        "master_timeline": {
+            "total_events": len(timeline_events_all),
+            "events": timeline_events_all,
+            "clusters": timeline_clusters,
+            "summary": timeline_summary,
+            "files": timeline_files,
         },
     }
 

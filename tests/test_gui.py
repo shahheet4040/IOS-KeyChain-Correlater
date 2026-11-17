@@ -173,3 +173,64 @@ def test_gui_carver_tab(gui_app):
     assert "del_001" in content
     assert "ChatStorage.sqlite" in content
     assert "Deleted secret message" in content
+
+
+def test_gui_timeline_tab(gui_app):
+    """Verify master timeline tab initialization, population, filter, and selection."""
+    app = gui_app
+    assert hasattr(app, "tab_timeline")
+    assert hasattr(app, "timeline_tree")
+    assert hasattr(app, "timeline_detail_text")
+
+    from correlator.timeline import TimelineEvent, CorrelationCluster
+
+    t0 = 1700000000.0
+    ev1 = TimelineEvent("SMS-101", "2023-11-14 22:13:20 UTC", t0, "Messages (SMS)", "📱", "chat_message", "+15550199234", "Target", "Operation code Alpha", "sms.db", "message")
+    ev2 = TimelineEvent("WA-202", "2023-11-14 22:14:10 UTC", t0 + 50, "WhatsApp", "🟢", "chat_message", "Target", "Boss", "Proceeding to coordinates", "ChatStorage.sqlite", "ZWAMESSAGE")
+
+    cluster = CorrelationCluster(
+        cluster_id="BURST-001",
+        start_time_utc="2023-11-14 22:13:20 UTC",
+        end_time_utc="2023-11-14 22:14:10 UTC",
+        duration_minutes=0.8,
+        apps_involved=["Messages (SMS)", "WhatsApp"],
+        participants=["+15550199234", "Boss"],
+        event_count=2,
+        events=[ev1, ev2],
+    )
+
+    summary = {
+        "total_events": 2,
+        "app_count": 2,
+        "time_span": "2023-11-14 -> 2023-11-14",
+    }
+
+    app._populate_timeline_table([ev1, ev2], clusters=[cluster], summary=summary)
+    children = app.timeline_tree.get_children()
+    assert len(children) == 2
+    assert "Events: 2" in app.lbl_tl_count.cget("text")
+    assert "Multi-App Bursts: 1" in app.lbl_tl_bursts.cget("text")
+
+    # Filter by text
+    app.timeline_filter_var.set("Alpha")
+    app._filter_timeline_table()
+    assert len(app.timeline_tree.get_children()) == 1
+
+    # Filter by App
+    app.timeline_filter_var.set("")
+    app.timeline_app_var.set("WhatsApp")
+    app._filter_timeline_table()
+    assert len(app.timeline_tree.get_children()) == 1
+
+    app.timeline_app_var.set("ALL")
+    app._filter_timeline_table()
+    assert len(app.timeline_tree.get_children()) == 2
+
+    # Selection event inspection
+    app.timeline_tree.selection_set("0")
+    app._on_timeline_row_selected()
+    content = app.timeline_detail_text.get("1.0", "end")
+    assert "SMS-101" in content
+    assert "Messages (SMS)" in content
+    assert "Operation code Alpha" in content
+    assert "BURST-001" in content

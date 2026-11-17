@@ -204,6 +204,8 @@ class ForensicCorrelatorGUI:
             self.ingest_log.config(bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["text_primary"])
         if hasattr(self, "carver_detail_text"):
             self.carver_detail_text.config(bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["text_primary"])
+        if hasattr(self, "timeline_detail_text"):
+            self.timeline_detail_text.config(bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["text_primary"])
 
         # Update Treeview tags
         if hasattr(self, "results_tree"):
@@ -255,6 +257,7 @@ class ForensicCorrelatorGUI:
         tools_menu.add_command(label="🏥 Run System Doctor & Auto-Heal", command=self._run_doctor_action)
         tools_menu.add_command(label="🔎 Deep Multi-Database Search", command=lambda: self.notebook.select(self.tab_search))
         tools_menu.add_command(label="🚨 Carve SQLite Deleted Records & Slack", command=lambda: self.notebook.select(self.tab_carver))
+        tools_menu.add_command(label="⏱️ Open Master Cross-App Timeline", command=lambda: self.notebook.select(self.tab_timeline))
         tools_menu.add_command(label="🌍 Open Geospatial Route Map", command=lambda: self.notebook.select(self.tab_geospatial))
         tools_menu.add_separator()
         tools_menu.add_command(label="🌓 Toggle Dark / Light Theme", command=self._toggle_theme)
@@ -607,12 +610,17 @@ class ForensicCorrelatorGUI:
         self.notebook.add(self.tab_geospatial, text=" 🌍 GPS Movement Map ")
         self._setup_geospatial_tab(self.tab_geospatial)
 
-        # Tab 9: SQLite Deleted Data & Slack Space Carver
+        # Tab 9: Master Cross-Application Timeline
+        self.tab_timeline = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(self.tab_timeline, text=" ⏱️ Master Timeline ")
+        self._setup_timeline_tab(self.tab_timeline)
+
+        # Tab 10: SQLite Deleted Data & Slack Space Carver
         self.tab_carver = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self.tab_carver, text=" 🚨 Deleted Data Carver ")
         self._setup_carver_tab(self.tab_carver)
 
-        # Tab 10: Execution Logs
+        # Tab 11: Execution Logs
         self.tab_logs = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self.tab_logs, text=" 📜 Execution Logs ")
         self._setup_logs_view(self.tab_logs)
@@ -1569,7 +1577,302 @@ class ForensicCorrelatorGUI:
             export_csv(self.current_geo_points, dest)
             messagebox.showinfo("Export Complete", f"CSV spreadsheet saved successfully to:\n{dest}")
 
-    # ── Tab 9: SQLite Deleted Data & Slack Space Carver ───────────────
+    # ── Tab 9: Master Cross-Application Timeline ──────────────────────
+
+    def _setup_timeline_tab(self, parent):
+        self.current_timeline_events = []
+        self.current_timeline_clusters = []
+        self.current_timeline_summary = {}
+
+        # Top Control Bar
+        bar = ttk.Frame(parent)
+        bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(bar, text="Filter:").pack(side=tk.LEFT, padx=(0, 4))
+        self.timeline_filter_var = tk.StringVar()
+        tl_entry = ttk.Entry(bar, textvariable=self.timeline_filter_var, width=20)
+        tl_entry.pack(side=tk.LEFT, padx=4)
+        tl_entry.bind("<KeyRelease>", lambda e: self._filter_timeline_table())
+
+        ttk.Label(bar, text="App:").pack(side=tk.LEFT, padx=(6, 4))
+        self.timeline_app_var = tk.StringVar(value="ALL")
+        self.timeline_app_combo = ttk.Combobox(bar, textvariable=self.timeline_app_var, state="readonly", width=15)
+        self.timeline_app_combo["values"] = ["ALL"]
+        self.timeline_app_combo.pack(side=tk.LEFT, padx=4)
+        self.timeline_app_combo.bind("<<ComboboxSelected>>", lambda e: self._filter_timeline_table())
+
+        ttk.Button(bar, text="🔍 Extract Timeline", command=self._extract_timeline_action).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="🌐 Open Master Timeline", style="Primary.TButton", command=self._open_master_timeline).pack(side=tk.LEFT, padx=4)
+
+        ttk.Button(bar, text="📥 Export JSON", command=self._export_timeline_json).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(bar, text="📊 Export CSV", command=self._export_timeline_csv).pack(side=tk.RIGHT, padx=4)
+
+        # KPI HUD Bar
+        hud = ttk.Frame(parent, style="Header.TFrame", padding=6)
+        hud.pack(fill=tk.X, pady=(0, 6))
+
+        self.lbl_tl_count = ttk.Label(hud, text="Events: 0", font=("Segoe UI", 9, "bold"))
+        self.lbl_tl_count.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_tl_apps = ttk.Label(hud, text="Apps: 0", font=("Segoe UI", 9))
+        self.lbl_tl_apps.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_tl_bursts = ttk.Label(hud, text="Multi-App Bursts: 0", font=("Segoe UI", 9, "bold"))
+        self.lbl_tl_bursts.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_tl_timespan = ttk.Label(hud, text="Time Span: N/A", font=("Segoe UI", 9))
+        self.lbl_tl_timespan.pack(side=tk.LEFT, padx=8)
+
+        # Paned Window (Split: Top = Treeview list, Bottom = Detail Inspector)
+        paned = ttk.PanedWindow(parent, orient=tk.VERTICAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+
+        # Top pane: Table
+        tree_frame = ttk.Frame(paned)
+        paned.add(tree_frame, weight=3)
+
+        cols = ("id", "app", "timestamp", "type", "sender", "recipient", "content", "flags")
+        self.timeline_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
+
+        headers = {
+            "id": ("#", 45),
+            "app": ("Application", 110),
+            "timestamp": ("Timestamp (UTC)", 155),
+            "type": ("Event Type", 95),
+            "sender": ("Sender / Origin", 130),
+            "recipient": ("Recipient / Target", 130),
+            "content": ("Message / Action Content", 380),
+            "flags": ("Flags", 80),
+        }
+        for col, (title, width) in headers.items():
+            self.timeline_tree.heading(col, text=title)
+            self.timeline_tree.column(col, width=width, anchor=tk.W)
+
+        scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.timeline_tree.yview)
+        scroll_x = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.timeline_tree.xview)
+        self.timeline_tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+
+        self.timeline_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        scroll_y.grid(row=0, column=1, sticky=tk.NS)
+        scroll_x.grid(row=1, column=0, sticky=tk.EW)
+
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self.timeline_tree.bind("<<TreeviewSelect>>", self._on_timeline_row_selected)
+
+        # Bottom pane: Detailed Record Inspector
+        detail_frame = ttk.LabelFrame(paned, text=" 🔬 Chronological Event & Cross-App Correlation Inspector ", padding=6)
+        paned.add(detail_frame, weight=2)
+
+        p = self.palette
+        self.timeline_detail_text = tk.Text(
+            detail_frame,
+            wrap=tk.WORD,
+            font=("Consolas", 9),
+            background=p.get("log_bg", "#1e1e1e"),
+            foreground=p.get("log_fg", "#d4d4d4"),
+            insertbackground=p.get("text_primary", "#ffffff"),
+            bd=0,
+            padx=8,
+            pady=6,
+        )
+        detail_sb = ttk.Scrollbar(detail_frame, orient=tk.VERTICAL, command=self.timeline_detail_text.yview)
+        self.timeline_detail_text.configure(yscrollcommand=detail_sb.set)
+        self.timeline_detail_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        detail_sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def _populate_timeline_table(self, events=None, clusters=None, summary=None):
+        if events is not None:
+            self.current_timeline_events = list(events)
+        if clusters is not None:
+            self.current_timeline_clusters = list(clusters)
+        if summary is not None:
+            self.current_timeline_summary = dict(summary)
+
+        total = len(self.current_timeline_events)
+        apps = sorted(list(set(getattr(e, "app", "") for e in self.current_timeline_events if getattr(e, "app", ""))))
+        burst_count = len(self.current_timeline_clusters)
+        timespan = self.current_timeline_summary.get("time_span", "N/A")
+
+        self.lbl_tl_count.config(text=f"Events: {total:,}")
+        self.lbl_tl_apps.config(text=f"Apps: {len(apps)}")
+        self.lbl_tl_bursts.config(text=f"Multi-App Bursts: {burst_count}")
+        self.lbl_tl_timespan.config(text=f"Time Span: {timespan}")
+
+        self.timeline_app_combo["values"] = ["ALL"] + apps
+
+        self._filter_timeline_table()
+
+    def _filter_timeline_table(self):
+        self.timeline_tree.delete(*self.timeline_tree.get_children())
+        q = self.timeline_filter_var.get().lower().strip()
+        app_choice = self.timeline_app_var.get()
+
+        max_display = 1500
+        count = 0
+        for i, ev in enumerate(self.current_timeline_events):
+            app_name = str(getattr(ev, "app", ""))
+            if app_choice != "ALL" and app_name != app_choice:
+                continue
+
+            app_icon = str(getattr(ev, "app_icon", ""))
+            ts = str(getattr(ev, "timestamp_utc", ""))
+            ev_type = str(getattr(ev, "event_type", ""))
+            sender = str(getattr(ev, "sender", ""))
+            recip = str(getattr(ev, "recipient", ""))
+            content = str(getattr(ev, "content", ""))
+            is_del = getattr(ev, "is_deleted", False)
+            has_geo = getattr(ev, "latitude", None) is not None
+
+            row_str = f"{app_name} {ts} {ev_type} {sender} {recip} {content}".lower()
+            if not q or q in row_str:
+                flags = []
+                if is_del:
+                    flags.append("🚨 CARVED")
+                if has_geo:
+                    flags.append("📍 GPS")
+                flag_str = " ".join(flags)
+
+                self.timeline_tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(i),
+                    values=(f"#{i+1}", f"{app_icon} {app_name}", ts, ev_type, sender, recip, content[:120], flag_str),
+                )
+                count += 1
+                if count >= max_display:
+                    break
+
+    def _on_timeline_row_selected(self, event=None):
+        selected = self.timeline_tree.selection()
+        if not selected:
+            return
+        idx = int(selected[0])
+        if idx < 0 or idx >= len(self.current_timeline_events):
+            return
+        ev = self.current_timeline_events[idx]
+
+        self.timeline_detail_text.delete("1.0", tk.END)
+
+        lines = [
+            f"╔══════════════════════════════════════════════════════════════════════╗",
+            f"  FORENSIC CHRONOLOGICAL EVENT: {getattr(ev, 'event_id', 'N/A')}",
+            f"╚══════════════════════════════════════════════════════════════════════╝",
+            f"• Application           : {getattr(ev, 'app_icon', '')} {getattr(ev, 'app', 'N/A')}",
+            f"• Event Type            : {getattr(ev, 'event_type', 'N/A')}",
+            f"• Timestamp (UTC)       : {getattr(ev, 'timestamp_utc', 'N/A')}",
+            f"• Timestamp (Unix Epoch): {getattr(ev, 'timestamp_epoch', 0.0)}",
+            f"• Sender / Origin       : {getattr(ev, 'sender', 'N/A')}",
+            f"• Recipient / Target    : {getattr(ev, 'recipient', 'N/A')}",
+            f"• Source SQLite Database: {getattr(ev, 'source_database', 'N/A')} (Table: {getattr(ev, 'source_table', 'N/A')})",
+        ]
+        if getattr(ev, "latitude", None) is not None:
+            lines.append(f"• Physical Coordinates  : {ev.latitude:.6f}, {ev.longitude:.6f}")
+        if getattr(ev, "is_deleted", False):
+            lines.append(f"• Deleted / Carved Flag : 🚨 YES (Recovered from database slack / freeblocks)")
+
+        lines.append("")
+        lines.append("── RAW MESSAGE / EVENT CONTENT ─────────────────────────────────────────")
+        lines.append(getattr(ev, "content", ""))
+
+        meta = getattr(ev, "metadata", {})
+        if meta:
+            lines.append("")
+            lines.append("── METADATA & FORENSIC ATTRIBUTES ──────────────────────────────────────")
+            for k, v in meta.items():
+                lines.append(f"  {k}: {v}")
+
+        # Check if event belongs to any multi-app burst cluster
+        ev_id = getattr(ev, "event_id", "")
+        matching_clusters = [
+            c for c in self.current_timeline_clusters
+            if any(getattr(ce, "event_id", "") == ev_id for ce in getattr(c, "events", []))
+        ]
+        if matching_clusters:
+            lines.append("")
+            lines.append("── 🔥 CROSS-APPLICATION CORRELATION BURST DETECTED ────────────────────")
+            for c in matching_clusters:
+                lines.append(f"  Cluster ID        : {getattr(c, 'cluster_id', 'N/A')}")
+                lines.append(f"  Time Window (UTC) : {getattr(c, 'start_time_utc', '')} -> {getattr(c, 'end_time_utc', '')} ({getattr(c, 'duration_minutes', 0.0):.1f} min)")
+                lines.append(f"  Apps Involved     : {', '.join(getattr(c, 'apps_involved', []))}")
+                lines.append(f"  Participants      : {', '.join(getattr(c, 'participants', []))}")
+                lines.append(f"  Total Burst Events: {getattr(c, 'event_count', 0)}")
+
+        self.timeline_detail_text.insert(tk.END, "\n".join(lines))
+
+    def _extract_timeline_action(self):
+        target = self.out_dir_var.get().strip()
+        decrypted_export = Path(target) / "decrypted_export"
+        ext_path = self.extraction_var.get().strip()
+
+        scan_dir = None
+        if decrypted_export.is_dir() and list(decrypted_export.glob("*.sqlite")):
+            scan_dir = decrypted_export
+        elif ext_path and Path(ext_path).is_dir():
+            scan_dir = Path(ext_path)
+        elif target and Path(target).is_dir():
+            scan_dir = Path(target)
+
+        if not scan_dir:
+            messagebox.showwarning("Extract Timeline", "Please select an extraction folder or run analysis first.")
+            return
+
+        self._log(f"[*] Extracting master cross-application timeline from: {scan_dir}...")
+        try:
+            from correlator.timeline import extract_master_timeline
+            res = extract_master_timeline(
+                scan_dir,
+                geo_points=getattr(self, "current_geo_points", None),
+                carved_records=getattr(self, "current_carved_records", None),
+            )
+            self._populate_timeline_table(
+                events=res.get("events"),
+                clusters=res.get("clusters"),
+                summary=res.get("summary"),
+            )
+            self._log(f"[+] Master timeline extracted: {res.get('total_events')} events across {res.get('summary', {}).get('app_count')} apps.")
+            messagebox.showinfo("Timeline Complete", f"Extracted {res.get('total_events'):,} events across {res.get('summary', {}).get('app_count')} applications!\nDetected {len(res.get('clusters', []))} multi-channel communication bursts.")
+        except Exception as e:
+            self._log(f"[-] Timeline error: {e}")
+            messagebox.showerror("Timeline Error", f"Could not extract timeline: {e}")
+
+    def _open_master_timeline(self):
+        out_root = Path(self.out_dir_var.get())
+        tl_html = out_root / "master_timeline.html"
+
+        if not tl_html.exists() and self.current_timeline_events:
+            from correlator.timeline import generate_master_timeline_html
+            tl_html.parent.mkdir(parents=True, exist_ok=True)
+            generate_master_timeline_html(self.current_timeline_events, clusters=self.current_timeline_clusters, out_path=tl_html)
+
+        if tl_html.exists():
+            import webbrowser
+            webbrowser.open(tl_html.resolve().as_uri())
+        else:
+            messagebox.showinfo("Master Timeline", "No master timeline HTML generated yet. Click 'Extract Timeline' or run analysis first.")
+
+    def _export_timeline_json(self):
+        if not self.current_timeline_events:
+            messagebox.showwarning("Export JSON", "No timeline events to export.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Stream", "*.json")])
+        if dest:
+            from correlator.timeline import export_timeline_json
+            export_timeline_json(self.current_timeline_events, dest, clusters=self.current_timeline_clusters)
+            messagebox.showinfo("Export Complete", f"Timeline JSON stream saved to:\n{dest}")
+
+    def _export_timeline_csv(self):
+        if not self.current_timeline_events:
+            messagebox.showwarning("Export CSV", "No timeline events to export.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("Plaso CSV", "*.csv")])
+        if dest:
+            from correlator.timeline import export_timeline_csv
+            export_timeline_csv(self.current_timeline_events, dest)
+            messagebox.showinfo("Export Complete", f"Plaso-compatible timeline CSV saved to:\n{dest}")
+
+    # ── Tab 10: SQLite Deleted Data & Slack Space Carver ──────────────
 
     def _setup_carver_tab(self, parent):
         self.current_carved_records = []
@@ -2018,6 +2321,12 @@ class ForensicCorrelatorGUI:
         self._populate_geospatial_table(geo_data.get("points"), geo_data.get("summary"))
         carved_data = result.get("carved_deleted", {})
         self._populate_carver_table(carved_data.get("records", []))
+        tl_data = result.get("master_timeline", {})
+        self._populate_timeline_table(
+            events=tl_data.get("events"),
+            clusters=tl_data.get("clusters"),
+            summary=tl_data.get("summary"),
+        )
 
         messagebox.showinfo(
             "Analysis Complete",

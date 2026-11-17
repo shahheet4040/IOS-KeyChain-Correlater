@@ -103,6 +103,13 @@ def main(argv=None):
     carve_parser.add_argument("--dir", type=Path, default=None, help="Path to directory of SQLite databases to scan and carve")
     carve_parser.add_argument("--out", "-o", default=Path("out/carved_evidence"), type=Path, help="Output directory for carved evidence")
 
+    # 'timeline' subcommand (Master cross-application timeline & correlation)
+    timeline_parser = subparsers.add_parser("timeline", help="Extract unified cross-application timeline and detect multi-channel bursts")
+    timeline_parser.add_argument("--dir", "-d", type=Path, default=None, help="Directory containing decrypted SQLite databases or extraction root")
+    timeline_parser.add_argument("--out", "-o", default=Path("out/timeline"), type=Path, help="Output directory for timeline HTML, JSON, and CSV")
+    timeline_parser.add_argument("--max", "-m", type=int, default=20000, help="Maximum number of chronological events to extract")
+    timeline_parser.add_argument("--open", action="store_true", help="Automatically open interactive timeline in web browser")
+
     # Top-level direct arguments (backward-compatibility when subcommand omitted)
     parser.add_argument("--root", "--extraction", "-e", dest="root", type=Path, help="Path to iOS extraction root")
     parser.add_argument("--keychain", "-k", type=Path, help="Path to normalized keychain JSON export")
@@ -220,6 +227,55 @@ def main(argv=None):
         print(f" [+] JSON Evidence Export           : {json_path}")
         print(f" [+] CSV Spreadsheet Export          : {csv_path}")
         print("=" * 70 + "\n")
+        return 0
+
+    if argv and argv[0] == "timeline":
+        try:
+            args = timeline_parser.parse_args(argv[1:])
+        except SystemExit as e:
+            return e.code if e.code is not None else 1
+
+        from correlator.timeline import (
+            export_timeline_csv,
+            export_timeline_json,
+            extract_master_timeline,
+            generate_master_timeline_html,
+        )
+
+        scan_dir = args.dir or Path(".")
+        print("\n" + "=" * 70)
+        print(" ⏱️ iOS Forensic Master Cross-Application Timeline Engine")
+        print("=" * 70)
+        print(f" [*] Scanning evidence directory: {scan_dir}")
+
+        res = extract_master_timeline(scan_dir, max_records=args.max)
+        events = res["events"]
+        clusters = res["clusters"]
+        summary = res["summary"]
+
+        out_dir = Path(args.out).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        html_p = out_dir / "master_timeline.html"
+        json_p = out_dir / "timeline.json"
+        csv_p = out_dir / "timeline.csv"
+
+        generate_master_timeline_html(events, clusters=clusters, out_path=html_p)
+        export_timeline_json(events, json_p, clusters=clusters)
+        export_timeline_csv(events, csv_p)
+
+        print(f"\n [+] Total Chronological Events : {len(events):,}")
+        print(f" [+] Unique Applications       : {summary['app_count']} ({', '.join(summary['applications'])})")
+        print(f" [+] Multi-App Bursts Detected : {summary['burst_count']}")
+        print(f" [+] Active Time Range         : {summary['time_span']}")
+        print(f" [+] HTML Master Timeline      : {html_p}")
+        print(f" [+] Plaso / Forensic CSV      : {csv_p}")
+        print(f" [+] Structured JSON Stream    : {json_p}")
+        print("=" * 70 + "\n")
+
+        if args.open and html_p.exists():
+            import webbrowser
+            webbrowser.open(html_p.resolve().as_uri())
         return 0
 
     if argv and argv[0] == "doctor":
