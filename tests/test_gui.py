@@ -110,3 +110,66 @@ def test_gui_filters_and_kpi(gui_app):
     app.results_filter_var.set("")
     app._filter_results_table()
     assert len(app.results_tree.get_children()) == 2
+
+
+def test_gui_carver_tab(gui_app):
+    """Verify carver tab initialization, population, live search, and record selection."""
+    app = gui_app
+    assert hasattr(app, "tab_carver")
+    assert hasattr(app, "carver_tree")
+    assert hasattr(app, "carver_detail_text")
+
+    from correlator.carver import DeletedRecord
+
+    rec1 = DeletedRecord(
+        record_id="del_001",
+        database="ChatStorage.sqlite",
+        page_num=4,
+        offset_in_page=320,
+        source_type="freeblock",
+        table_hint="ZWAMESSAGE",
+        rowid_hint=42,
+        columns=["Alice", "Deleted secret message"],
+        raw_text="Alice | Deleted secret message",
+        confidence=0.92,
+        metadata={"freeblock_len": 64},
+    )
+    rec2 = DeletedRecord(
+        record_id="del_002",
+        database="Notes.sqlite",
+        page_num=8,
+        offset_in_page=120,
+        source_type="unallocated_slack",
+        table_hint="ZNOTE",
+        rowid_hint=99,
+        columns=["Financial", "Burn after reading code: 99482"],
+        raw_text="Financial | Burn after reading code: 99482",
+        confidence=0.75,
+        metadata={},
+    )
+
+    app._populate_carver_table([rec1, rec2])
+    children = app.carver_tree.get_children()
+    assert len(children) == 2
+    assert "Recovered Records: 2" in app.lbl_carver_count.cget("text")
+
+    # Live filter search
+    app.carver_filter_var.set("secret")
+    app._filter_carver_table()
+    assert len(app.carver_tree.get_children()) == 1
+
+    app.carver_filter_var.set("financial")
+    app._filter_carver_table()
+    assert len(app.carver_tree.get_children()) == 1
+
+    app.carver_filter_var.set("")
+    app._filter_carver_table()
+    assert len(app.carver_tree.get_children()) == 2
+
+    # Selection event inspection
+    app.carver_tree.selection_set("0")
+    app._on_carver_row_selected()
+    content = app.carver_detail_text.get("1.0", "end")
+    assert "del_001" in content
+    assert "ChatStorage.sqlite" in content
+    assert "Deleted secret message" in content

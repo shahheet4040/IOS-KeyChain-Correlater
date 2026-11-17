@@ -49,6 +49,30 @@ def _read_sqlite_evidence(export_dir: Path) -> List[Dict]:
         except Exception as e:
             tables_data.append({"name": "__error__", "columns": [], "rows": [], "error": str(e)})
 
+        # Carve deleted rows & slack space records
+        try:
+            from correlator.carver import carve_sqlite_database
+            carved_items = carve_sqlite_database(db_path)
+            if carved_items:
+                c_cols = ["Status", "Record ID", "Source Type", "Page/Offset", "Confidence", "Carved Content Preview"]
+                c_rows = []
+                for c in carved_items:
+                    c_rows.append([
+                        "🚨 DELETED / CARVED",
+                        c.record_id,
+                        c.source_type,
+                        f"Page {c.page_num} (off {c.offset_in_page})",
+                        f"{int(c.confidence * 100)}%",
+                        c.raw_text,
+                    ])
+                tables_data.insert(0, {
+                    "name": "🚨 RECOVERED_DELETED_DATA",
+                    "columns": c_cols,
+                    "rows": c_rows,
+                })
+        except Exception:
+            pass
+
         if tables_data:
             evidence.append({
                 "name": db_path.name,

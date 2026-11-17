@@ -347,6 +347,26 @@ def execute_pipeline(
     except Exception as e:
         print(f"  [!] Geospatial analysis notice: {e}", file=sys.stderr)
 
+    # SQLite deleted data & slack space carving
+    carved_records_all: List[Any] = []
+    carved_files: Dict[str, Path] = {}
+    try:
+        from correlator.carver import carve_directory_databases, export_carved_csv, export_carved_json
+        target_carve_dir = export_dir if export_dir and Path(export_dir).is_dir() else extraction_path
+        carved_map = carve_directory_databases(target_carve_dir)
+        for _, rec_list in carved_map.items():
+            carved_records_all.extend(rec_list)
+
+        if out_dir and carved_records_all:
+            out_p = Path(out_dir).resolve()
+            c_json = out_p / "deleted_records.json"
+            c_csv = out_p / "deleted_records.csv"
+            export_carved_json(carved_records_all, c_json)
+            export_carved_csv(carved_records_all, c_csv)
+            carved_files = {"json": c_json, "csv": c_csv}
+    except Exception as e:
+        print(f"  [!] Deleted data carving notice: {e}", file=sys.stderr)
+
     return {
         "results": results,
         "total_databases": len(results),
@@ -362,6 +382,11 @@ def execute_pipeline(
             "points": geo_points,
             "summary": geo_summary,
             "files": geo_files,
+        },
+        "carved_deleted": {
+            "total_recovered": len(carved_records_all),
+            "records": carved_records_all,
+            "files": carved_files,
         },
     }
 

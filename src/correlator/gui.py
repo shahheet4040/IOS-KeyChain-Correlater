@@ -202,6 +202,8 @@ class ForensicCorrelatorGUI:
             self.acq_log_text.config(bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["text_primary"])
         if hasattr(self, "ingest_log"):
             self.ingest_log.config(bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["text_primary"])
+        if hasattr(self, "carver_detail_text"):
+            self.carver_detail_text.config(bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["text_primary"])
 
         # Update Treeview tags
         if hasattr(self, "results_tree"):
@@ -252,6 +254,8 @@ class ForensicCorrelatorGUI:
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="🏥 Run System Doctor & Auto-Heal", command=self._run_doctor_action)
         tools_menu.add_command(label="🔎 Deep Multi-Database Search", command=lambda: self.notebook.select(self.tab_search))
+        tools_menu.add_command(label="🚨 Carve SQLite Deleted Records & Slack", command=lambda: self.notebook.select(self.tab_carver))
+        tools_menu.add_command(label="🌍 Open Geospatial Route Map", command=lambda: self.notebook.select(self.tab_geospatial))
         tools_menu.add_separator()
         tools_menu.add_command(label="🌓 Toggle Dark / Light Theme", command=self._toggle_theme)
         menubar.add_cascade(label="Tools", menu=tools_menu)
@@ -603,7 +607,12 @@ class ForensicCorrelatorGUI:
         self.notebook.add(self.tab_geospatial, text=" 🌍 GPS Movement Map ")
         self._setup_geospatial_tab(self.tab_geospatial)
 
-        # Tab 9: Execution Logs
+        # Tab 9: SQLite Deleted Data & Slack Space Carver
+        self.tab_carver = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(self.tab_carver, text=" 🚨 Deleted Data Carver ")
+        self._setup_carver_tab(self.tab_carver)
+
+        # Tab 10: Execution Logs
         self.tab_logs = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self.tab_logs, text=" 📜 Execution Logs ")
         self._setup_logs_view(self.tab_logs)
@@ -1560,7 +1569,257 @@ class ForensicCorrelatorGUI:
             export_csv(self.current_geo_points, dest)
             messagebox.showinfo("Export Complete", f"CSV spreadsheet saved successfully to:\n{dest}")
 
-    # ── Tab 9: Execution Logs ────────────────────────────────────────
+    # ── Tab 9: SQLite Deleted Data & Slack Space Carver ───────────────
+
+    def _setup_carver_tab(self, parent):
+        self.current_carved_records = []
+
+        # Top Control Bar
+        bar = ttk.Frame(parent)
+        bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(bar, text="Filter:").pack(side=tk.LEFT, padx=(0, 4))
+        self.carver_filter_var = tk.StringVar()
+        carver_entry = ttk.Entry(bar, textvariable=self.carver_filter_var, width=22)
+        carver_entry.pack(side=tk.LEFT, padx=4)
+        carver_entry.bind("<KeyRelease>", lambda e: self._filter_carver_table())
+
+        ttk.Button(bar, text="🔍 Carve Extraction DBs", command=self._carve_databases_action).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="📂 Carve Single SQLite DB...", style="Primary.TButton", command=self._carve_single_db_action).pack(side=tk.LEFT, padx=4)
+
+        ttk.Button(bar, text="📥 Export JSON", command=self._export_carver_json).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(bar, text="📊 Export CSV", command=self._export_carver_csv).pack(side=tk.RIGHT, padx=4)
+
+        # KPI HUD Bar
+        hud = ttk.Frame(parent, style="Header.TFrame", padding=6)
+        hud.pack(fill=tk.X, pady=(0, 6))
+
+        self.lbl_carver_count = ttk.Label(hud, text="Recovered Records: 0", font=("Segoe UI", 9, "bold"))
+        self.lbl_carver_count.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_carver_sources = ttk.Label(hud, text="Sources: 0 freeblock | 0 slack | 0 freelist", font=("Segoe UI", 9))
+        self.lbl_carver_sources.pack(side=tk.LEFT, padx=8)
+
+        self.lbl_carver_conf = ttk.Label(hud, text="Confidence: 0 HIGH | 0 MEDIUM", font=("Segoe UI", 9))
+        self.lbl_carver_conf.pack(side=tk.LEFT, padx=8)
+
+        # Paned Window (Split: Top = Treeview list, Bottom = Detail Inspector)
+        paned = ttk.PanedWindow(parent, orient=tk.VERTICAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+
+        # Top pane: Table
+        tree_frame = ttk.Frame(paned)
+        paned.add(tree_frame, weight=3)
+
+        cols = ("id", "db", "source", "page", "offset", "confidence", "preview")
+        self.carver_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
+
+        headers = {
+            "id": ("#", 50),
+            "db": ("Database File", 180),
+            "source": ("Carve Source", 130),
+            "page": ("Page #", 70),
+            "offset": ("Byte Offset", 100),
+            "confidence": ("Confidence", 90),
+            "preview": ("Recovered Content / Decoded Values", 450),
+        }
+        for col, (title, width) in headers.items():
+            self.carver_tree.heading(col, text=title)
+            self.carver_tree.column(col, width=width, anchor=tk.W)
+
+        scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.carver_tree.yview)
+        scroll_x = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.carver_tree.xview)
+        self.carver_tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+
+        self.carver_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        scroll_y.grid(row=0, column=1, sticky=tk.NS)
+        scroll_x.grid(row=1, column=0, sticky=tk.EW)
+
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self.carver_tree.bind("<<TreeviewSelect>>", self._on_carver_row_selected)
+
+        # Bottom pane: Detailed Record Inspector
+        detail_frame = ttk.LabelFrame(paned, text=" 🔬 Carved Evidence Detail Inspector ", padding=6)
+        paned.add(detail_frame, weight=2)
+
+        p = self.palette
+        self.carver_detail_text = tk.Text(
+            detail_frame,
+            wrap=tk.WORD,
+            font=("Consolas", 9),
+            background=p.get("log_bg", "#1e1e1e"),
+            foreground=p.get("log_fg", "#d4d4d4"),
+            insertbackground=p.get("text_primary", "#ffffff"),
+            bd=0,
+            padx=8,
+            pady=6,
+        )
+        detail_sb = ttk.Scrollbar(detail_frame, orient=tk.VERTICAL, command=self.carver_detail_text.yview)
+        self.carver_detail_text.configure(yscrollcommand=detail_sb.set)
+        self.carver_detail_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        detail_sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    def _populate_carver_table(self, records=None):
+        if records is not None:
+            self.current_carved_records = list(records)
+
+        total = len(self.current_carved_records)
+        freeblocks = sum(1 for r in self.current_carved_records if getattr(r, "source_type", "") == "freeblock")
+        slacks = sum(1 for r in self.current_carved_records if "slack" in getattr(r, "source_type", ""))
+        freelists = sum(1 for r in self.current_carved_records if getattr(r, "source_type", "") == "freelist")
+        high_conf = sum(1 for r in self.current_carved_records if getattr(r, "confidence", 0.0) >= 0.8)
+        med_conf = total - high_conf
+
+        self.lbl_carver_count.config(text=f"Recovered Records: {total}")
+        self.lbl_carver_sources.config(text=f"Sources: {freeblocks} freeblock | {slacks} slack | {freelists} freelist")
+        self.lbl_carver_conf.config(text=f"Confidence: {high_conf} HIGH | {med_conf} MEDIUM/LOW")
+
+        self._filter_carver_table()
+
+    def _filter_carver_table(self):
+        self.carver_tree.delete(*self.carver_tree.get_children())
+        q = self.carver_filter_var.get().lower().strip()
+
+        for i, r in enumerate(self.current_carved_records, start=1):
+            db = getattr(r, "database", "")
+            src = getattr(r, "source_type", "")
+            page = str(getattr(r, "page_num", ""))
+            offset = hex(getattr(r, "offset_in_page", 0)) if isinstance(getattr(r, "offset_in_page", 0), int) else str(getattr(r, "offset_in_page", ""))
+            conf_val = getattr(r, "confidence", 0.0)
+            conf_str = f"HIGH ({conf_val:.0%})" if conf_val >= 0.8 else f"MED ({conf_val:.0%})"
+            raw = getattr(r, "raw_text", "")
+            cols = getattr(r, "columns", [])
+            cols_preview = " | ".join(str(c) for c in cols if c is not None) if cols else raw
+
+            row_str = f"{db} {src} {page} {conf_str} {raw} {cols_preview}".lower()
+            if not q or q in row_str:
+                self.carver_tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(i - 1),
+                    values=(f"#{i}", Path(db).name, src, page, offset, conf_str, cols_preview[:120]),
+                )
+
+    def _on_carver_row_selected(self, event=None):
+        selected = self.carver_tree.selection()
+        if not selected:
+            return
+        idx = int(selected[0])
+        if idx < 0 or idx >= len(self.current_carved_records):
+            return
+        rec = self.current_carved_records[idx]
+
+        self.carver_detail_text.delete("1.0", tk.END)
+
+        lines = [
+            f"╔══════════════════════════════════════════════════════════════════════╗",
+            f"  FORENSIC RECOVERED RECORD: {getattr(rec, 'record_id', 'N/A')}",
+            f"╚══════════════════════════════════════════════════════════════════════╝",
+            f"• Database Source File : {getattr(rec, 'database', 'N/A')}",
+            f"• Carve Technique      : {getattr(rec, 'source_type', 'N/A')}",
+            f"• Physical Location    : Page #{getattr(rec, 'page_num', 'N/A')}, Offset: 0x{getattr(rec, 'offset_in_page', 0):04X}",
+            f"• Forensic Confidence  : {getattr(rec, 'confidence', 0.0):.1%}",
+        ]
+        if getattr(rec, "table_hint", None):
+            lines.append(f"• Probable Table       : {rec.table_hint}")
+        if getattr(rec, "rowid_hint", None):
+            lines.append(f"• Original Row ID      : {rec.rowid_hint}")
+
+        lines.append("")
+        lines.append("── DECODED STRUCTURED COLUMNS ──────────────────────────────────────────")
+        cols = getattr(rec, "columns", [])
+        if cols:
+            for c_idx, val in enumerate(cols):
+                lines.append(f"  Col #{c_idx + 1:02d}: {val!r}")
+        else:
+            lines.append("  (No intact column header schema; carved via pattern slack string analysis)")
+
+        lines.append("")
+        lines.append("── RAW EXTRACTED PAYLOAD / STRINGS ─────────────────────────────────────")
+        lines.append(getattr(rec, "raw_text", ""))
+
+        meta = getattr(rec, "metadata", {})
+        if meta:
+            lines.append("")
+            lines.append("── METADATA & FORENSIC ATTRIBUTES ──────────────────────────────────────")
+            for k, v in meta.items():
+                lines.append(f"  {k}: {v}")
+
+        self.carver_detail_text.insert(tk.END, "\n".join(lines))
+
+    def _carve_databases_action(self):
+        target = self.out_dir_var.get().strip()
+        decrypted_export = Path(target) / "decrypted_export"
+        ext_path = self.extraction_var.get().strip()
+
+        scan_dir = None
+        if decrypted_export.is_dir() and list(decrypted_export.glob("*.sqlite")):
+            scan_dir = decrypted_export
+        elif ext_path and Path(ext_path).is_dir():
+            scan_dir = Path(ext_path)
+        elif target and Path(target).is_dir():
+            scan_dir = Path(target)
+
+        if not scan_dir:
+            messagebox.showwarning("Carve Databases", "No extraction or decrypted export directory available. Please select an extraction folder or run analysis first.")
+            return
+
+        self._log(f"[*] Carving SQLite deleted records and slack space from: {scan_dir}...")
+        try:
+            from correlator.carver import carve_directory_databases
+            results_map = carve_directory_databases(scan_dir)
+            all_records = []
+            for _, recs in results_map.items():
+                all_records.extend(recs)
+            self._populate_carver_table(all_records)
+            self._log(f"[+] Carving complete: recovered {len(all_records)} deleted records across {len(results_map)} databases.")
+            messagebox.showinfo("Carving Complete", f"Recovered {len(all_records)} deleted records from {len(results_map)} database files!")
+        except Exception as e:
+            self._log(f"[-] Carving error: {e}")
+            messagebox.showerror("Carver Error", f"Could not carve databases: {e}")
+
+    def _carve_single_db_action(self):
+        file_path = filedialog.askopenfilename(
+            title="Select SQLite Database to Carve",
+            filetypes=[("SQLite Databases", "*.sqlite *.db *.sqlite3"), ("All Files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        self._log(f"[*] Carving single database: {file_path}...")
+        try:
+            from correlator.carver import carve_sqlite_database
+            records = carve_sqlite_database(file_path)
+            self._populate_carver_table(records)
+            self._log(f"[+] Carved {len(records)} deleted records from {Path(file_path).name}.")
+            messagebox.showinfo("Database Carved", f"Successfully carved {len(records)} deleted records from:\n{Path(file_path).name}")
+        except Exception as e:
+            self._log(f"[-] Carving error: {e}")
+            messagebox.showerror("Carver Error", f"Could not carve database: {e}")
+
+    def _export_carver_json(self):
+        if not self.current_carved_records:
+            messagebox.showwarning("Export JSON", "No carved records to export.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON File", "*.json")])
+        if dest:
+            from correlator.carver import export_carved_json
+            export_carved_json(self.current_carved_records, dest)
+            messagebox.showinfo("Export Complete", f"Carved records exported successfully to:\n{dest}")
+
+    def _export_carver_csv(self):
+        if not self.current_carved_records:
+            messagebox.showwarning("Export CSV", "No carved records to export.")
+            return
+        dest = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Spreadsheet", "*.csv")])
+        if dest:
+            from correlator.carver import export_carved_csv
+            export_carved_csv(self.current_carved_records, dest)
+            messagebox.showinfo("Export Complete", f"Carved records exported successfully to:\n{dest}")
+
+    # ── Tab 10: Execution Logs ───────────────────────────────────────
 
     def _setup_logs_view(self, parent):
         top = ttk.Frame(parent)
@@ -1757,6 +2016,8 @@ class ForensicCorrelatorGUI:
         self._populate_entities_table()
         geo_data = result.get("geospatial", {})
         self._populate_geospatial_table(geo_data.get("points"), geo_data.get("summary"))
+        carved_data = result.get("carved_deleted", {})
+        self._populate_carver_table(carved_data.get("records", []))
 
         messagebox.showinfo(
             "Analysis Complete",

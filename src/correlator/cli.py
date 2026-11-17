@@ -97,6 +97,12 @@ def main(argv=None):
     map_parser.add_argument("--out", "-o", default=Path("out/geospatial"), type=Path, help="Output directory for map and route files")
     map_parser.add_argument("--open", action="store_true", help="Automatically open interactive map in web browser")
 
+    # 'carve' subcommand (SQLite deleted data & slack space carving)
+    carve_parser = subparsers.add_parser("carve", help="Carve deleted records, freelists, and slack space from SQLite databases")
+    carve_parser.add_argument("--db", "-d", type=Path, default=None, help="Path to a single SQLite database file to carve")
+    carve_parser.add_argument("--dir", type=Path, default=None, help="Path to directory of SQLite databases to scan and carve")
+    carve_parser.add_argument("--out", "-o", default=Path("out/carved_evidence"), type=Path, help="Output directory for carved evidence")
+
     # Top-level direct arguments (backward-compatibility when subcommand omitted)
     parser.add_argument("--root", "--extraction", "-e", dest="root", type=Path, help="Path to iOS extraction root")
     parser.add_argument("--keychain", "-k", type=Path, help="Path to normalized keychain JSON export")
@@ -168,6 +174,52 @@ def main(argv=None):
             import webbrowser
             webbrowser.open(map_html.as_uri())
 
+        return 0
+
+    if argv and argv[0] == "carve":
+        try:
+            args = carve_parser.parse_args(argv[1:])
+        except SystemExit as e:
+            return e.code if e.code is not None else 1
+
+        from correlator.carver import (
+            carve_directory_databases,
+            carve_sqlite_database,
+            export_carved_csv,
+            export_carved_json,
+        )
+
+        print("\n" + "=" * 70)
+        print(" 🕵️ iOS Forensic SQLite Deleted Data & Slack Space Carver")
+        print("=" * 70)
+
+        out_dir = Path(args.out).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        all_records = []
+
+        if args.db:
+            print(f" [*] Carving single database: {args.db}")
+            recs = carve_sqlite_database(args.db)
+            all_records.extend(recs)
+        elif args.dir:
+            print(f" [*] Scanning directory for databases: {args.dir}")
+            carved_map = carve_directory_databases(args.dir)
+            for db_n, r_list in carved_map.items():
+                print(f"     [+] {db_n}: {len(r_list)} deleted records recovered")
+                all_records.extend(r_list)
+        else:
+            print("[-] Error: Please specify either --db <path> or --dir <path>", file=sys.stderr)
+            return 1
+
+        json_path = out_dir / "carved_deleted_records.json"
+        csv_path = out_dir / "carved_deleted_records.csv"
+        export_carved_json(all_records, json_path)
+        export_carved_csv(all_records, csv_path)
+
+        print(f"\n [+] Total Deleted Records Recovered : {len(all_records)}")
+        print(f" [+] JSON Evidence Export           : {json_path}")
+        print(f" [+] CSV Spreadsheet Export          : {csv_path}")
+        print("=" * 70 + "\n")
         return 0
 
     if argv and argv[0] == "doctor":
