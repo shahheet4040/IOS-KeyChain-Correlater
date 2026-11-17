@@ -234,3 +234,87 @@ def test_gui_timeline_tab(gui_app):
     assert "Messages (SMS)" in content
     assert "Operation code Alpha" in content
     assert "BURST-001" in content
+
+
+def test_gui_dossier_tab(gui_app):
+    """Verify suspect dossier tab initialization, population, filter, and profile inspection."""
+    app = gui_app
+    assert hasattr(app, "tab_dossier")
+    assert hasattr(app, "dossier_tree")
+    assert hasattr(app, "dossier_detail_text")
+
+    from correlator.lead_synthesis import TargetDossier, CaseBriefing
+
+    d1 = TargetDossier(
+        canonical_id="+15550199234",
+        primary_alias="Mallory Archer",
+        aliases=["Mallory", "+15550199234"],
+        phone_numbers=["+15550199234"],
+        email_addresses=["mallory@agency.org"],
+        apps_used={"Signal": 42, "Messages (SMS)": 15},
+        total_interactions=57,
+        first_seen_utc="2023-11-14 22:10:00 UTC",
+        last_seen_utc="2023-11-14 22:30:00 UTC",
+        threat_score=85,
+        threat_tier="CRITICAL",
+        key_findings=["Detected tactical migration from SMS to Signal", "Transferred cryptocurrency wallet"],
+        watchlist_hits=["Crypto Intelligence Pattern matched"],
+        has_encrypted_migration=True,
+        has_deleted_records=True,
+        has_burst_activity=True,
+        sample_excerpts=["[2023-11-14 | Signal] Send 5 ETH to 0x71C..."],
+    )
+
+    d2 = TargetDossier(
+        canonical_id="Alice",
+        primary_alias="Alice",
+        aliases=["Alice"],
+        apps_used={"WhatsApp": 5},
+        total_interactions=5,
+        threat_score=15,
+        threat_tier="LOW",
+        key_findings=["Casual social communications"],
+    )
+
+    briefing = CaseBriefing(
+        case_title="Test Case Briefing",
+        generated_at_utc="2023-11-15 00:00:00 UTC",
+        total_events_analyzed=62,
+        total_suspects_identified=2,
+        critical_suspects_count=1,
+        high_suspects_count=0,
+        executive_narrative="Executive summary of findings.",
+        top_suspects=[d1, d2],
+        critical_anomalies=[{"severity": "CRITICAL", "title": "Channel Switching", "description": "Migrated to Signal"}],
+    )
+
+    app._populate_dossier_table([d1, d2], briefing=briefing)
+    children = app.dossier_tree.get_children()
+    assert len(children) == 2
+    assert "Suspects: 2" in app.lbl_dos_total.cget("text")
+    assert "Critical Threats: 1" in app.lbl_dos_crit.cget("text")
+
+    # Filter by text
+    app.dossier_filter_var.set("Mallory")
+    app._filter_dossier_table()
+    assert len(app.dossier_tree.get_children()) == 1
+
+    # Filter by Threat Tier
+    app.dossier_filter_var.set("")
+    app.dossier_threat_var.set("CRITICAL")
+    app._filter_dossier_table()
+    assert len(app.dossier_tree.get_children()) == 1
+
+    app.dossier_threat_var.set("ALL")
+    app._filter_dossier_table()
+    assert len(app.dossier_tree.get_children()) == 2
+
+    # Selection event inspection
+    app.dossier_tree.selection_set("0")
+    app._on_dossier_row_selected()
+    content = app.dossier_detail_text.get("1.0", "end")
+    assert "Mallory Archer" in content
+    assert "CRITICAL" in content
+    assert "+15550199234" in content
+    assert "mallory@agency.org" in content
+    assert "0x71C..." in content

@@ -217,6 +217,9 @@ def generate_html_report(
         t_html_p = out_p / "master_timeline.html"
         t_csv_p = out_p / "timeline.csv"
         t_json_p = out_p / "timeline.json"
+        l_html_p = out_p / "lead_dossier.html"
+        l_csv_p = out_p / "lead_dossier.csv"
+        l_json_p = out_p / "lead_dossier.json"
 
         if map_p.exists() or geojson_p.exists():
             geo_banner_html = f"""
@@ -247,6 +250,23 @@ def generate_html_report(
                     <a href="{html.escape(t_html_p.name)}" target="_blank" style="background:#1f6feb; color:#ffffff; text-decoration:none; padding:8px 16px; border-radius:6px; font-weight:bold; font-size:0.9em;">🌐 Open Master Timeline</a>
                     <a href="{html.escape(t_csv_p.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 CSV Stream</a>
                     <a href="{html.escape(t_json_p.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 JSON</a>
+                </div>
+            </div>
+        </div>
+            """
+
+        if l_html_p.exists() or l_csv_p.exists():
+            geo_banner_html += f"""
+        <div style="margin-top:16px; background:#161b22; border:1px solid #30363d; border-radius:10px; padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                <div>
+                    <h2 style="color:#ffffff; margin:0 0 6px 0; font-size:1.25em;">🎯 Forensic Case Briefing &amp; Target Suspect Dossiers</h2>
+                    <p style="color:#8b949e; margin:0; font-size:0.9em;">Synthesized person-of-interest dossiers, behavioral anomalies, threat rankings, and actionable leads.</p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <a href="{html.escape(l_html_p.name)}" target="_blank" style="background:#da3633; color:#ffffff; text-decoration:none; padding:8px 16px; border-radius:6px; font-weight:bold; font-size:0.9em;">🌐 Open Target Dossiers</a>
+                    <a href="{html.escape(l_csv_p.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 Dossier CSV</a>
+                    <a href="{html.escape(l_json_p.name)}" download style="background:#21262d; border:1px solid #30363d; color:#c9d1d9; text-decoration:none; padding:8px 12px; border-radius:6px; font-size:0.85em;">📥 JSON</a>
                 </div>
             </div>
         </div>

@@ -402,6 +402,44 @@ def execute_pipeline(
     except Exception as e:
         print(f"  [!] Master timeline analysis notice: {e}", file=sys.stderr)
 
+    # Forensic Lead Intelligence & Target Dossier Synthesis
+    lead_dossiers_all: List[Any] = []
+    case_briefing_obj: Any = None
+    lead_files: Dict[str, Path] = {}
+    try:
+        from correlator.lead_synthesis import (
+            export_dossiers_csv,
+            export_dossiers_json,
+            generate_case_briefing,
+            generate_lead_dossier_html,
+            synthesize_target_dossiers,
+        )
+        if timeline_events_all:
+            lead_dossiers_all = synthesize_target_dossiers(
+                events=timeline_events_all,
+                clusters=timeline_clusters,
+                carved_records=carved_records_all,
+            )
+            case_briefing_obj = generate_case_briefing(
+                dossiers=lead_dossiers_all,
+                events=timeline_events_all,
+                clusters=timeline_clusters,
+                carved_records=carved_records_all,
+            )
+
+            if out_dir and lead_dossiers_all:
+                out_p = Path(out_dir).resolve()
+                l_html = out_p / "lead_dossier.html"
+                l_json = out_p / "lead_dossier.json"
+                l_csv = out_p / "lead_dossier.csv"
+
+                generate_lead_dossier_html(case_briefing_obj, out_path=l_html)
+                export_dossiers_json(case_briefing_obj, l_json)
+                export_dossiers_csv(lead_dossiers_all, l_csv)
+                lead_files = {"html": l_html, "json": l_json, "csv": l_csv}
+    except Exception as e:
+        print(f"  [!] Lead synthesis analysis notice: {e}", file=sys.stderr)
+
     return {
         "results": results,
         "total_databases": len(results),
@@ -429,6 +467,12 @@ def execute_pipeline(
             "clusters": timeline_clusters,
             "summary": timeline_summary,
             "files": timeline_files,
+        },
+        "lead_intelligence": {
+            "total_suspects": len(lead_dossiers_all),
+            "dossiers": lead_dossiers_all,
+            "briefing": case_briefing_obj,
+            "files": lead_files,
         },
     }
 
