@@ -439,6 +439,13 @@ class ForensicCorrelatorGUI:
             variable=self.export_var,
         ).pack(side=tk.LEFT)
 
+        self.deep_recover_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            opts_sub,
+            text="⚡ Deep Recover (Scrape Container Secrets & Wordlists)",
+            variable=self.deep_recover_var,
+        ).pack(side=tk.LEFT, padx=(12, 0))
+
         common_box.columnconfigure(1, weight=1)
 
     def _on_intake_mode_changed(self):
@@ -1499,11 +1506,15 @@ class ForensicCorrelatorGUI:
             out_p = Path(out_dir)
             export_p = (out_p / "exports") if self.export_var.get() else None
 
+            deep_rec = getattr(self, "deep_recover_var", None)
+            do_deep = deep_rec.get() if deep_rec else True
+
             result = execute_pipeline(
                 extraction=Path(ext_path),
                 keychain=Path(kc_path),
                 out_dir=out_p,
                 export_dir=export_p,
+                deep_recover=do_deep,
             )
             self.root.after(0, self._on_analysis_finished, result, None)
         except Exception as e:

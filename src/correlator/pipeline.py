@@ -227,6 +227,8 @@ def execute_pipeline(
     export_dir: Optional[Path] = None,
     work_dir: Optional[Path] = None,
     out_dir: Optional[Path] = None,
+    deep_recover: bool = False,
+    passwords: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Executes the end-to-end correlation pipeline programmatically.
@@ -248,7 +250,13 @@ def execute_pipeline(
         if html_report is None:
             html_report = out_dir / "report.html"
 
-    results = correlate_engine(extraction_path, keychain_path, work_dir=work_dir)
+    results = correlate_engine(
+        extraction_path,
+        keychain_path,
+        work_dir=work_dir,
+        deep_recover=deep_recover,
+        passwords=passwords,
+    )
 
     exported_files = []
     decrypted_count = sum(1 for r in results if r.status == "decrypted")
@@ -320,6 +328,8 @@ def run_pipeline(
     export_dir: Optional[Path] = None,
     work_dir: Optional[Path] = None,
     out_dir: Optional[Path] = None,
+    deep_recover: bool = False,
+    passwords: Optional[List[str]] = None,
 ) -> int:
     """CLI orchestrator for the forensic correlation pipeline."""
     extraction = Path(extraction)
@@ -344,6 +354,8 @@ def run_pipeline(
         export_dir=export_dir,
         work_dir=work_dir,
         out_dir=out_dir,
+        deep_recover=deep_recover,
+        passwords=passwords,
     )
 
     results = pipe_res["results"]

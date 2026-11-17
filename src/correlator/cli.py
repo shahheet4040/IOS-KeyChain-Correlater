@@ -30,6 +30,8 @@ def main(argv=None):
     run_parser.add_argument("--report", "-r", type=Path, default=None, help="Path to output correlation JSON report")
     run_parser.add_argument("--html", type=Path, default=None, help="Path to output standalone HTML report")
     run_parser.add_argument("--work-dir", type=Path, default=None, help="Scratch working directory")
+    run_parser.add_argument("--deep-recover", action="store_true", default=False, help="Enable container secret scraping & smart passcode dictionary attacks for locked databases")
+    run_parser.add_argument("--wordlist", type=Path, default=None, help="Path to custom candidate password wordlist file for key recovery")
 
     # 'evaluate' subcommand
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate report against ground truth")
@@ -331,8 +333,12 @@ def main(argv=None):
             return e.code if e.code is not None else 1
 
         try:
-            # If export_dir or custom report paths given, run_pipeline provides decrypted exports
-            if args.export_dir:
+            passwords = None
+            if getattr(args, "wordlist", None) and args.wordlist.is_file():
+                passwords = [line.strip() for line in args.wordlist.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip()]
+
+            # If export_dir, deep_recover, or custom report paths given, run_pipeline provides decrypted exports
+            if args.export_dir or getattr(args, "deep_recover", False):
                 return run_pipeline(
                     extraction=args.root,
                     keychain=args.keychain,
@@ -341,6 +347,8 @@ def main(argv=None):
                     export_dir=args.export_dir,
                     work_dir=args.work_dir,
                     out_dir=args.out,
+                    deep_recover=getattr(args, "deep_recover", False),
+                    passwords=passwords,
                 )
 
             # Call pipeline.run following the exact 11-step sequence
