@@ -19,8 +19,8 @@ if _harness.is_dir() and str(_harness) not in sys.path:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_fake_fixtures():
-    """Ensures that synthetic test fixtures (out/fake) exist before tests run."""
+def manage_test_fixtures():
+    """Ensures that synthetic test fixtures (out/fake) exist during tests and cleans up after."""
     fake_dir = _root / "out" / "fake"
     keychain_file = fake_dir / "keychain.json"
     ground_truth = fake_dir / "ground_truth.json"
@@ -32,3 +32,20 @@ def ensure_fake_fixtures():
             generate_fake_extraction(fake_dir)
         except Exception as e:
             print(f"Notice: Synthetic fixture generation: {e}")
+
+    yield
+
+    # Automatic Teardown: purge all test artifacts so the tool and workspace remain clean for real data
+    import shutil
+    for folder in [_root / "cases_workspace", _root / "out"]:
+        if folder.is_dir():
+            for item in folder.iterdir():
+                if item.name == ".gitkeep":
+                    continue
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                except Exception:
+                    pass
