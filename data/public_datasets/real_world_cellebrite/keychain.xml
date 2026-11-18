@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<keychain>
-  <item service="org.whispersystems.signal.database" account="databaseKey" group="group.org.whispersystems.signal" value="tOrW9bdwFmE0NIhpHpUWXXcDmScKZON9JluFn5OF+hM=" />
-  <item service="com.tencent.xin.wcdb" account="WCDBKey" group="com.tencent.xin" value="BjCQXrFzZKE6PzbXKxayN1amQeRxRgpiZ3kGqK3ZezM=" />
-  <item service="com.apple.account.AppleID" account="suspect.target@icloud.com" group="apple" value="U3VwZXJTZWNyZXRQYXNzd29yZDIwMjYh" />
-</keychain>

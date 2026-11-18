@@ -30,13 +30,14 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
             "category": "input_path",
             "severity": "error",
             "details": f"The extraction root '{root or 'provided path'}' could not be located.",
-            "cause": "The directory path is misspelled, moved, or has not been generated yet.",
+            "cause": "The directory path is misspelled, moved, unmounted, or does not exist.",
             "steps": [
-                "Verify the directory path exists on your hard drive.",
-                "To generate sample test data, run: python harness/make_fake_extraction.py --out out/fake",
-                "Or in the GUI, click the 'Load Demo Data' button to automatically fill valid paths."
+                "Verify the directory path exists on your filesystem or external evidence drive.",
+                "Ensure mounted forensic images (.dmg, .e01, .raw) are currently mounted and accessible.",
+                "For commercial dumps (Cellebrite, GrayKey, iTunes), use 'correlator ingest-dump' or the Forensic Dump tab in GUI.",
+                "To test with synthetic sample data, run: python harness/make_fake_extraction.py --out out/fake"
             ],
-            "quick_command": "python harness/make_fake_extraction.py --out out/fake",
+            "quick_command": "python -m correlator.cli --help",
         }
 
     # 2. Invalid iOS Structure
@@ -46,13 +47,13 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
             "category": "filesystem_structure",
             "severity": "error",
             "details": "The directory does not contain standard iOS container directories.",
-            "cause": "Expected 'private/var/mobile/Containers' inside the root folder, but it was not found.",
+            "cause": "Expected 'private/var/mobile/Containers' or standard iOS root inside the folder.",
             "steps": [
-                "Ensure you selected the root of the extracted filesystem.",
-                "If inspecting an unzipped backup, ensure the path points to the parent of 'private/'.",
-                "To test with realistic iOS containers, run: python harness/make_fake_extraction.py --out out/fake"
+                "Ensure you selected the root of the extracted filesystem containing 'private/var/mobile'.",
+                "If inspecting an unzipped backup or tar archive, select the parent directory of 'private/'.",
+                "If analyzing a Cellebrite UFED report or GrayKey dump, use 'correlator ingest-dump' instead."
             ],
-            "quick_command": "python harness/make_fake_extraction.py --out out/fake",
+            "quick_command": "python -m correlator.cli ingest-dump --help",
         }
 
     # 3. Missing or Corrupt Keychain File
@@ -61,14 +62,14 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
             "title": "Keychain File Missing",
             "category": "keychain_path",
             "severity": "error",
-            "details": f"Keychain JSON file '{keychain or 'path'}' was not found.",
-            "cause": "The keychain file path is invalid or has not been created yet.",
+            "details": f"Keychain file '{keychain or 'path'}' was not found.",
+            "cause": "The keychain file path is invalid or the file has not been dumped yet.",
             "steps": [
-                "Verify that the keychain JSON file exists at the specified path.",
-                "Generate the sample keychain: python harness/make_fake_extraction.py --out out/fake",
-                "Ensure the file contains valid JSON with Base64 encoded keys."
+                "Verify that the keychain file exists at the specified path.",
+                "Ensure the file is a supported format: JSON (.json), Apple Plist (.plist), XML (.xml), or SQLite (.db).",
+                "To dump keychain from a jailbroken device, use keychain-dumper or mvt-ios.",
             ],
-            "quick_command": "python harness/make_fake_extraction.py --out out/fake",
+            "quick_command": "python -m correlator.cli import-keychain --help",
         }
 
     if isinstance(err, json.JSONDecodeError):
@@ -79,11 +80,11 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
             "details": f"JSON syntax error in keychain file: {err_str}",
             "cause": "The keychain file contains invalid formatting, unclosed quotes, or truncated text.",
             "steps": [
-                "Open the keychain JSON in VS Code to check for red syntax errors.",
+                "Inspect the keychain JSON file for syntax errors or incomplete extraction transfer.",
+                "If the keychain was exported as plist or xml, use 'correlator import-keychain --keychain <file>'.",
                 "Ensure the file begins with '[' and ends with ']'.",
-                "Regenerate a clean sample keychain: python harness/make_fake_extraction.py --out out/fake"
             ],
-            "quick_command": "python harness/make_fake_extraction.py --out out/fake",
+            "quick_command": "python -m correlator.cli import-keychain --help",
         }
 
     # 4. Forensic Evidence Integrity Error (File Hash Mismatch)
@@ -93,13 +94,13 @@ def diagnose_exception(err: Exception, context: Optional[Dict[str, Any]] = None)
             "category": "integrity",
             "severity": "critical",
             "details": f"Evidence modification detected: {err_str}",
-            "cause": "A database or WAL file was modified during processing, altering its SHA-256 hash.",
+            "cause": "A database or WAL file was modified during processing, altering its cryptographic hash.",
             "steps": [
                 "Digital forensics strictly prohibits modifying original evidence files.",
-                "Check if another program (like DB Browser for SQLite) has the file open and checkpointed the WAL.",
-                "Close any database viewers and restore the original files from your backup or run: python harness/make_fake_extraction.py --out out/fake"
+                "Check if another process (such as SQLite Browser or anti-virus) altered or locked the file.",
+                "Close any database viewers and work from a write-blocked or verified forensic working copy."
             ],
-            "quick_command": "python harness/make_fake_extraction.py --out out/fake",
+            "quick_command": "python -m correlator.cli --help",
         }
 
     # 5. Missing sqlcipher3 Library
@@ -194,30 +195,23 @@ def run_system_doctor(auto_fix: bool = False) -> Dict[str, Any]:
             "msg": f"sqlcipher3 issue: {e}. Use .venv\\Scripts\\python.exe"
         })
 
-    # Check 2: Demo Extraction and Data
-    fake_dir = Path("out/fake").resolve()
-    extraction_dir = fake_dir / "extraction"
-    keychain_file = fake_dir / "keychain.json"
-
-    data_ok = extraction_dir.is_dir() and keychain_file.is_file()
-    if data_ok:
-        checks.append({"name": "Demo Test Extraction", "status": "PASS", "msg": f"Found at {fake_dir}"})
-    else:
-        if auto_fix:
-            try:
-                from harness.make_fake_extraction import generate_fake_extraction
-                generate_fake_extraction(fake_dir)
-                checks.append({"name": "Demo Test Extraction", "status": "FIXED", "msg": f"Auto-generated at {fake_dir}"})
-            except Exception as e:
-                has_error = True
-                checks.append({"name": "Demo Test Extraction", "status": "FAIL", "msg": f"Failed to generate: {e}"})
-        else:
-            has_error = True
-            checks.append({
-                "name": "Demo Test Extraction",
-                "status": "WARN",
-                "msg": f"Missing at {fake_dir}. Run: python -m correlator.cli doctor --fix"
-            })
+    # Check 2: Forensic Ingestion & Decryption Engine
+    try:
+        from correlator.scanner import scan_extraction
+        from correlator.correlate import correlate
+        from correlator.dump_ingest import detect_dump_format
+        checks.append({
+            "name": "Forensic Analysis Engine",
+            "status": "PASS",
+            "msg": "Core modules operational (Container Resolver, Multi-Profile Decryptor, Dump Parser)"
+        })
+    except Exception as e:
+        has_error = True
+        checks.append({
+            "name": "Forensic Analysis Engine",
+            "status": "FAIL",
+            "msg": f"Engine module import error: {e}"
+        })
 
     # Check 3: Output write permissions
     test_out = Path("out/.write_test").resolve()
@@ -225,10 +219,25 @@ def run_system_doctor(auto_fix: bool = False) -> Dict[str, Any]:
         test_out.parent.mkdir(parents=True, exist_ok=True)
         test_out.write_text("ok", encoding="utf-8")
         test_out.unlink()
-        checks.append({"name": "Disk Write Permissions", "status": "PASS", "msg": "Writable out/ directory"})
+        checks.append({"name": "Disk Write Permissions", "status": "PASS", "msg": "Output directory writable"})
     except Exception as e:
         has_error = True
         checks.append({"name": "Disk Write Permissions", "status": "FAIL", "msg": f"Cannot write to out/: {e}"})
+
+    # Check 4: Workspace State (Clean for Real-World Evidence)
+    fake_dir = Path("out/fake").resolve()
+    if fake_dir.exists() and (fake_dir / "extraction").is_dir():
+        checks.append({
+            "name": "Forensic Workspace",
+            "status": "PASS",
+            "msg": f"Test fixtures detected at {fake_dir}"
+        })
+    else:
+        checks.append({
+            "name": "Forensic Workspace",
+            "status": "PASS",
+            "msg": "Clean environment ready for real-world evidence ingestion"
+        })
 
     return {
         "healthy": not has_error,

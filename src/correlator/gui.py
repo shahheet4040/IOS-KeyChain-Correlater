@@ -2592,7 +2592,7 @@ class ForensicCorrelatorGUI:
     # ── Status Bar ───────────────────────────────────────────────────
 
     def _create_status_bar(self):
-        self.status_var = tk.StringVar(value="Ready. Select evidence paths or click '✨ Load Demo Enclave' to test.")
+        self.status_var = tk.StringVar(value="Ready. Select iOS extraction root and keychain to begin forensic analysis.")
         bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, padding=(10, 4))
         bar.pack(side=tk.BOTTOM, fill=tk.X)
 
