@@ -832,11 +832,13 @@ def generate_interactive_map_html(
     """
     Generates a high-performance standalone interactive HTML map.
     Features:
-    - Leaflet.js with OpenStreetMap / CartoDB Dark tiles
-    - Built-in SVG vector grid fallback for completely offline / air-gapped forensic labs
-    - Interactive chronological time scrubber slider & playback animation
-    - Color-coded source markers (Photos, Routined, WhatsApp)
-    - Transit mode filters and detailed metadata popups
+    - High-precision Leaflet.js with CartoDB Dark, OpenStreetMap & Satellite layers
+    - Numbered sequence markers with distinct START (🚩) and FINISH (🏁) badges
+    - Collapsible Journey Feed Drawer with click-to-fly-to camera animation
+    - Directional movement chevrons and leg segment analytics (distance, velocity)
+    - 1-click Google Maps and Google Street View verification links in popups
+    - Interactive time scrubber slider and variable-speed playback animation
+    - Color-coded source filters (Photos, WhatsApp, Routined, Apple Maps)
     """
     if summary is None:
         points, summary = analyze_movement_trail(points)
@@ -872,76 +874,137 @@ def generate_interactive_map_html(
         /* Top HUD Bar */
         .hud-header {{
             position: absolute;
-            top: 16px;
-            left: 16px;
-            right: 16px;
+            top: 14px;
+            left: 14px;
+            right: 14px;
             z-index: 1000;
             background: var(--panel-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            padding: 12px 20px;
+            padding: 10px 18px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            backdrop-filter: blur(8px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
         }}
-        .hud-title {{ font-size: 1.15em; font-weight: 700; color: var(--text-white); display: flex; align-items: center; gap: 8px; }}
-        .hud-stats {{ display: flex; gap: 20px; font-size: 0.9em; }}
+        .hud-title {{ font-size: 1.1em; font-weight: 700; color: var(--text-white); display: flex; align-items: center; gap: 8px; }}
+        .hud-stats {{ display: flex; gap: 16px; font-size: 0.85em; }}
         .stat-badge {{ display: flex; flex-direction: column; align-items: flex-start; }}
-        .stat-label {{ font-size: 0.75em; text-transform: uppercase; color: #8b949e; letter-spacing: 0.5px; }}
-        .stat-val {{ font-size: 1.1em; font-weight: 700; color: var(--accent-blue); }}
+        .stat-label {{ font-size: 0.7em; text-transform: uppercase; color: #8b949e; letter-spacing: 0.5px; }}
+        .stat-val {{ font-size: 1.05em; font-weight: 700; color: var(--accent-blue); }}
 
         /* Controls Panel */
         .hud-controls {{
             position: absolute;
-            top: 90px;
-            left: 16px;
+            top: 76px;
+            left: 14px;
             z-index: 1000;
             background: var(--panel-bg);
             border: 1px solid var(--border-color);
             border-radius: 10px;
-            padding: 14px;
-            width: 280px;
-            backdrop-filter: blur(8px);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            padding: 12px;
+            width: 270px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
         }}
-        .control-group {{ margin-bottom: 12px; }}
-        .control-label {{ font-size: 0.8em; font-weight: 600; color: #8b949e; margin-bottom: 6px; display: block; }}
-        select, button {{
+        .control-group {{ margin-bottom: 10px; }}
+        .control-label {{ font-size: 0.75em; font-weight: 600; color: #8b949e; margin-bottom: 4px; display: block; }}
+        select, input[type=text], button {{
             width: 100%;
             background: #21262d;
             border: 1px solid var(--border-color);
             color: var(--text-white);
-            padding: 8px 12px;
+            padding: 6px 10px;
             border-radius: 6px;
-            font-size: 0.9em;
-            cursor: pointer;
+            font-size: 0.85em;
             outline: none;
+            cursor: pointer;
         }}
-        select:focus, button:hover {{ border-color: var(--accent-blue); }}
-        button.btn-play {{ background: #238636; border-color: #2ea043; font-weight: 600; margin-top: 4px; }}
-        button.btn-play:hover {{ background: #2ea043; }}
+        select:focus, input[type=text]:focus, button:hover {{ border-color: var(--accent-blue); }}
+        button.btn-action {{ background: #238636; border-color: #2ea043; font-weight: 600; margin-top: 4px; }}
+        button.btn-action:hover {{ background: #2ea043; }}
+        button.btn-secondary {{ background: #30363d; border-color: #484f58; margin-top: 6px; font-weight: 500; }}
+        button.btn-secondary:hover {{ background: #3c444d; }}
 
-        /* Bottom Time Scrubber */
-        .hud-scrubber {{
+        /* Right-hand Journey Feed Drawer */
+        .journey-drawer {{
             position: absolute;
-            bottom: 24px;
-            left: 20px;
-            right: 20px;
+            top: 76px;
+            right: 14px;
+            bottom: 84px;
+            width: 320px;
             z-index: 1000;
             background: var(--panel-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            padding: 14px 20px;
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(10px);
             box-shadow: 0 8px 24px rgba(0,0,0,0.6);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            overflow: hidden;
+            transition: transform 0.3s ease;
         }}
-        .scrubber-info {{ display: flex; justify-content: space-between; font-size: 0.85em; color: #8b949e; }}
-        .current-waypoint {{ color: var(--accent-blue); font-weight: 600; font-size: 1.0em; }}
+        .journey-drawer.collapsed {{
+            transform: translateX(340px);
+        }}
+        .drawer-header {{
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 700;
+            font-size: 0.9em;
+            color: var(--text-white);
+        }}
+        .drawer-search {{ padding: 8px 12px; border-bottom: 1px solid var(--border-color); }}
+        .drawer-list {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }}
+        .waypoint-card {{
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+        .waypoint-card:hover, .waypoint-card.active {{
+            border-color: var(--accent-blue);
+            background: #1c2128;
+            box-shadow: 0 2px 8px rgba(88,166,255,0.2);
+        }}
+        .card-top {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }}
+        .card-badge {{ font-size: 0.7em; font-weight: 700; padding: 2px 5px; border-radius: 4px; }}
+        .card-time {{ font-size: 0.75em; color: #8b949e; }}
+        .card-coords {{ font-size: 0.75em; color: #58a6ff; font-family: monospace; }}
+        .card-meta {{ font-size: 0.72em; color: #8b949e; margin-top: 3px; display: flex; justify-content: space-between; }}
+
+        /* Bottom Time Scrubber */
+        .hud-scrubber {{
+            position: absolute;
+            bottom: 16px;
+            left: 14px;
+            right: 14px;
+            z-index: 1000;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px 18px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }}
+        .scrubber-info {{ display: flex; justify-content: space-between; font-size: 0.8em; color: #8b949e; }}
+        .current-waypoint {{ color: var(--accent-blue); font-weight: 700; }}
         input[type=range] {{
             width: 100%;
             height: 6px;
@@ -953,19 +1016,58 @@ def generate_interactive_map_html(
         }}
 
         /* Legend */
-        .legend-pill {{ display: inline-flex; align-items: center; gap: 6px; font-size: 0.8em; margin-right: 12px; }}
-        .dot {{ width: 10px; height: 10px; border-radius: 50%; display: inline-block; }}
+        .legend-pill {{ display: inline-flex; align-items: center; gap: 5px; font-size: 0.75em; margin-right: 8px; margin-bottom: 4px; }}
+        .dot {{ width: 9px; height: 9px; border-radius: 50%; display: inline-block; }}
         .dot-photo {{ background: #58a6ff; }}
         .dot-routined {{ background: #238636; }}
         .dot-whatsapp {{ background: #d29922; }}
         .dot-anomaly {{ background: #da3633; }}
 
-        /* Leaflet Dark Theme Overrides */
-        .leaflet-popup-content-wrapper {{ background: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 8px; }}
+        /* Custom Numbered Pins */
+        .num-marker {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 11px;
+            color: #ffffff;
+            border: 2px solid #ffffff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+            transition: transform 0.2s;
+        }}
+        .num-marker:hover {{ transform: scale(1.2); }}
+        .num-start {{ background: #238636; border-color: #2ea043; box-shadow: 0 0 10px #238636; }}
+        .num-end {{ background: #da3633; border-color: #f85149; box-shadow: 0 0 10px #da3633; }}
+        .num-photo {{ background: #1f6feb; }}
+        .num-routined {{ background: #238636; }}
+        .num-whatsapp {{ background: #d29922; }}
+
+        /* Leaflet Popups */
+        .leaflet-popup-content-wrapper {{ background: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 10px; }}
         .leaflet-popup-tip {{ background: #161b22; }}
-        .popup-table td {{ padding: 3px 6px; font-size: 0.85em; }}
+        .popup-table td {{ padding: 3px 6px; font-size: 0.82em; }}
         .popup-table td.lbl {{ color: #8b949e; font-weight: 600; }}
-        .popup-badge {{ padding: 2px 6px; border-radius: 4px; font-size: 0.75em; font-weight: bold; background: #21262d; }}
+        .popup-actions {{
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #30363d;
+        }}
+        .btn-ext {{
+            flex: 1;
+            text-align: center;
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #58a6ff;
+            text-decoration: none;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }}
+        .btn-ext:hover {{ background: #30363d; text-decoration: none; color: #ffffff; }}
     </style>
 </head>
 <body>
@@ -982,16 +1084,16 @@ def generate_interactive_map_html(
                 <span class="stat-val" id="stat-dist">{summary.get('total_distance_km', 0.0)} km</span>
             </div>
             <div class="stat-badge">
-                <span class="stat-label">GPS Waypoints</span>
+                <span class="stat-label">Waypoints</span>
                 <span class="stat-val" id="stat-points">{len(points)}</span>
             </div>
             <div class="stat-badge">
-                <span class="stat-label">Max Speed</span>
+                <span class="stat-label">Max Velocity</span>
                 <span class="stat-val" id="stat-speed">{summary.get('max_speed_kmh', 0.0)} km/h</span>
             </div>
             <div class="stat-badge">
-                <span class="stat-label">Time Span</span>
-                <span class="stat-val" style="font-size:0.9em;color:#c9d1d9;">{summary.get('start_time_utc', 'N/A')[:10] if summary.get('start_time_utc') else 'N/A'} &rarr; {summary.get('end_time_utc', 'N/A')[:10] if summary.get('end_time_utc') else 'N/A'}</span>
+                <span class="stat-label">Date Span</span>
+                <span class="stat-val" style="font-size:0.85em;color:#c9d1d9;">{summary.get('start_time_utc', 'N/A')[:10] if summary.get('start_time_utc') else 'N/A'} &rarr; {summary.get('end_time_utc', 'N/A')[:10] if summary.get('end_time_utc') else 'N/A'}</span>
             </div>
         </div>
     </div>
@@ -1001,15 +1103,15 @@ def generate_interactive_map_html(
         <div class="control-group">
             <label class="control-label">EVIDENCE SOURCE FILTER</label>
             <select id="source-filter" onchange="applyFilters()">
-                <option value="ALL">All Sources ({len(points)} pts)</option>
-                <option value="photo_exif">Photos / EXIF</option>
-                <option value="photos_sqlite">Apple Photos Database</option>
-                <option value="apple_routined">Significant Locations (Routined)</option>
-                <option value="whatsapp">WhatsApp Shares</option>
+                <option value="ALL">All Sources ({len(points)} waypoints)</option>
+                <option value="photo_exif">📷 Photos / EXIF GPS</option>
+                <option value="photos_sqlite">🖼️ Apple Photos Database</option>
+                <option value="apple_routined">📍 Apple Significant Locations</option>
+                <option value="whatsapp">💬 WhatsApp Location Shares</option>
             </select>
         </div>
         <div class="control-group">
-            <label class="control-label">MAP TILE BASELAYER</label>
+            <label class="control-label">MAP BASELAYER</label>
             <select id="tile-layer" onchange="changeTileLayer()">
                 <option value="dark">CartoDB Dark Matter (Forensic)</option>
                 <option value="osm">OpenStreetMap Standard</option>
@@ -1017,20 +1119,42 @@ def generate_interactive_map_html(
             </select>
         </div>
         <div class="control-group">
-            <label class="control-label">ANIMATION SPEED</label>
-            <select id="anim-speed">
-                <option value="1">1x Realtime</option>
-                <option value="5" selected>5x Speed</option>
-                <option value="15">15x Speed</option>
+            <label class="control-label">MARKER DISPLAY MODE</label>
+            <select id="marker-mode" onchange="renderMapFeatures()">
+                <option value="numbered">Numbered Sequence (#1, #2, #3...)</option>
+                <option value="compact">Compact Forensic Circles</option>
             </select>
         </div>
-        <button class="btn-play" id="btn-playback" onclick="togglePlayback()">▶ Play Movement Trail</button>
+        <div class="control-group">
+            <label class="control-label">PLAYBACK VELOCITY</label>
+            <select id="anim-speed">
+                <option value="1">1x Realtime</option>
+                <option value="5" selected>5x Fast Forward</option>
+                <option value="15">15x High Speed</option>
+            </select>
+        </div>
+        <button class="btn-action" id="btn-playback" onclick="togglePlayback()">▶ Play Movement Trail</button>
+        <button class="btn-secondary" onclick="toggleDrawer()">📋 Toggle Journey Feed</button>
         
-        <div style="margin-top: 14px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+        <div style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 8px;">
             <div class="legend-pill"><span class="dot dot-photo"></span> Photos</div>
             <div class="legend-pill"><span class="dot dot-routined"></span> Routined</div>
             <div class="legend-pill"><span class="dot dot-whatsapp"></span> WhatsApp</div>
-            <div class="legend-pill"><span class="dot dot-anomaly"></span> High Speed</div>
+            <div class="legend-pill"><span class="dot dot-anomaly"></span> Rapid Transit</div>
+        </div>
+    </div>
+
+    <!-- Right-Hand Collapsible Journey Feed Drawer -->
+    <div class="journey-drawer" id="journey-drawer">
+        <div class="drawer-header">
+            <span>📍 Chronological Journey Feed</span>
+            <button style="width:auto; padding:2px 8px; font-size:0.8em;" onclick="toggleDrawer()">✕ Close</button>
+        </div>
+        <div class="drawer-search">
+            <input type="text" id="feed-search" placeholder="Search coordinates, time, file..." oninput="filterFeed(this.value)">
+        </div>
+        <div class="drawer-list" id="drawer-list">
+            <!-- Populated dynamically by JS -->
         </div>
     </div>
 
@@ -1039,7 +1163,7 @@ def generate_interactive_map_html(
         <div class="scrubber-info">
             <span class="current-waypoint" id="scrubber-waypoint">Waypoint 1 of {len(points)}</span>
             <span id="scrubber-timestamp">{points[0].timestamp_utc if points else 'No GPS Data'}</span>
-            <span id="scrubber-speed">Speed: 0.0 km/h | Mode: Origin</span>
+            <span id="scrubber-speed">Speed: 0.0 km/h | Mode: Origin Point</span>
         </div>
         <input type="range" id="time-slider" min="0" max="{max(0, len(points)-1)}" value="0" oninput="onScrub(this.value)">
     </div>
@@ -1055,7 +1179,7 @@ def generate_interactive_map_html(
         const summary = {summary_json};
         let currentPoints = [...rawPoints];
 
-        // 1. Initialize Leaflet Map
+        // 1. Initialize Map
         const initialLat = rawPoints.length > 0 ? rawPoints[0].latitude : 37.7749;
         const initialLon = rawPoints.length > 0 ? rawPoints[0].longitude : -122.4194;
         const map = L.map('map', {{ zoomControl: false }}).setView([initialLat, initialLon], 13);
@@ -1081,7 +1205,7 @@ def generate_interactive_map_html(
             tileLayers[val].addTo(map);
         }}
 
-        // Layer groups
+        // Layers
         let markerLayer = L.layerGroup().addTo(map);
         let routePolyline = null;
         let animatedTargetMarker = null;
@@ -1089,7 +1213,7 @@ def generate_interactive_map_html(
         let currentIndex = 0;
 
         function getMarkerColor(pt) {{
-            if (pt.speed_kmh && pt.speed_kmh > 140.0) return '#da3633'; // High speed
+            if (pt.speed_kmh && pt.speed_kmh > 140.0) return '#da3633';
             switch (pt.source_type) {{
                 case 'photo_exif': return '#58a6ff';
                 case 'photos_sqlite': return '#79c0ff';
@@ -1099,66 +1223,156 @@ def generate_interactive_map_html(
             }}
         }}
 
+        function getMarkerClass(pt, idx, total) {{
+            if (idx === 0) return 'num-start';
+            if (idx === total - 1) return 'num-end';
+            switch (pt.source_type) {{
+                case 'photo_exif':
+                case 'photos_sqlite': return 'num-photo';
+                case 'apple_routined': return 'num-routined';
+                case 'whatsapp': return 'num-whatsapp';
+                default: return 'num-photo';
+            }}
+        }}
+
         function renderMapFeatures() {{
             markerLayer.clearLayers();
             if (routePolyline) map.removeLayer(routePolyline);
 
-            if (currentPoints.length === 0) return;
+            if (currentPoints.length === 0) {{
+                populateJourneyFeed();
+                return;
+            }}
 
             const latlngs = currentPoints.map(p => [p.latitude, p.longitude]);
+            const markerMode = document.getElementById('marker-mode') ? document.getElementById('marker-mode').value : 'numbered';
 
-            // Draw glowing connected movement trail
+            // Connective trajectory line with arrows
             routePolyline = L.polyline(latlngs, {{
                 color: '#58a6ff',
-                weight: 3.5,
-                opacity: 0.8,
-                dashArray: '6, 6',
+                weight: 4,
+                opacity: 0.85,
+                dashArray: '8, 6',
                 lineJoin: 'round'
             }}).addTo(map);
 
-            // Add circle markers
             currentPoints.forEach((pt, idx) => {{
                 const col = getMarkerColor(pt);
-                const cm = L.circleMarker([pt.latitude, pt.longitude], {{
-                    radius: 6.5,
-                    fillColor: col,
-                    color: '#ffffff',
-                    weight: 1.5,
-                    opacity: 0.9,
-                    fillOpacity: 0.85
-                }});
+                const isStart = (idx === 0);
+                const isEnd = (idx === currentPoints.length - 1 && currentPoints.length > 1);
+                
+                let marker;
+                if (markerMode === 'numbered') {{
+                    const labelText = isStart ? '🚩' : (isEnd ? '🏁' : (idx + 1));
+                    const badgeClass = getMarkerClass(pt, idx, currentPoints.length);
+                    const icon = L.divIcon({{
+                        className: '',
+                        html: `<div class="num-marker ${{badgeClass}}" style="width:24px; height:24px;">${{labelText}}</div>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    }});
+                    marker = L.marker([pt.latitude, pt.longitude], {{ icon: icon }});
+                }} else {{
+                    marker = L.circleMarker([pt.latitude, pt.longitude], {{
+                        radius: 6.5,
+                        fillColor: col,
+                        color: '#ffffff',
+                        weight: 1.5,
+                        opacity: 0.9,
+                        fillOpacity: 0.85
+                    }});
+                }}
+
+                const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${{pt.latitude}},${{pt.longitude}}`;
+                const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${{pt.latitude}},${{pt.longitude}}`;
 
                 const popupHtml = `
-                    <div style="min-width:210px;">
-                        <h4 style="color:#ffffff; margin-bottom:6px;">${{pt.file_name || pt.point_id}}</h4>
+                    <div style="min-width:240px;">
+                        <h4 style="color:#ffffff; margin-bottom:6px; display:flex; justify-content:space-between;">
+                            <span>Stop #${{idx + 1}}</span>
+                            <span style="font-size:0.8em; font-weight:normal; color:#8b949e;">${{pt.source_type}}</span>
+                        </h4>
                         <table class="popup-table">
-                            <tr><td class="lbl">Timestamp:</td><td>${{pt.timestamp_utc}}</td></tr>
-                            <tr><td class="lbl">Source:</td><td><span class="popup-badge">${{pt.source_type}}</span></td></tr>
-                            <tr><td class="lbl">Coordinates:</td><td>${{pt.latitude.toFixed(6)}}, ${{pt.longitude.toFixed(6)}}</td></tr>
-                            <tr><td class="lbl">Speed:</td><td>${{pt.speed_kmh || 0.0}} km/h</td></tr>
-                            <tr><td class="lbl">Transit Mode:</td><td>${{pt.inferred_mode || 'Unknown'}}</td></tr>
-                            ${{pt.dwell_time_minutes ? `<tr><td class="lbl">Dwell Time:</td><td>${{pt.dwell_time_minutes}} min</td></tr>` : ''}}
+                            <tr><td class="lbl">Timestamp:</td><td><b>${{pt.timestamp_utc}}</b></td></tr>
+                            <tr><td class="lbl">Coordinates:</td><td><code style="color:#58a6ff;">${{pt.latitude.toFixed(6)}}, ${{pt.longitude.toFixed(6)}}</code></td></tr>
+                            <tr><td class="lbl">Velocity:</td><td>${{pt.speed_kmh ? pt.speed_kmh.toFixed(1) + ' km/h' : '0.0 km/h'}} (${{pt.inferred_mode || 'N/A'}})</td></tr>
+                            ${{pt.distance_from_prev_m ? `<tr><td class="lbl">Leg Distance:</td><td>${{pt.distance_from_prev_m > 1000 ? (pt.distance_from_prev_m/1000).toFixed(2) + ' km' : pt.distance_from_prev_m.toFixed(0) + ' m'}}</td></tr>` : ''}}
+                            ${{pt.file_name ? `<tr><td class="lbl">Evidence Ref:</td><td style="word-break:break-all;">${{pt.file_name}}</td></tr>` : ''}}
                         </table>
+                        <div class="popup-actions">
+                            <a href="${{gmapsUrl}}" target="_blank" rel="noopener noreferrer" class="btn-ext">🌐 Google Maps</a>
+                            <a href="${{streetViewUrl}}" target="_blank" rel="noopener noreferrer" class="btn-ext">👁️ Street View</a>
+                        </div>
                     </div>
                 `;
-                cm.bindPopup(popupHtml);
-                cm.on('click', () => setScrubberIndex(idx));
-                markerLayer.addLayer(cm);
+                marker.bindPopup(popupHtml);
+                marker.on('click', () => setScrubberIndex(idx));
+                markerLayer.addLayer(marker);
             }});
 
-            // Animated target pin (pulsing circle)
             if (!animatedTargetMarker) {{
                 animatedTargetMarker = L.circleMarker(latlngs[0], {{
-                    radius: 11,
+                    radius: 12,
                     fillColor: '#f78166',
                     color: '#ffffff',
-                    weight: 2.5,
+                    weight: 3,
                     opacity: 1.0,
                     fillOpacity: 0.95
                 }}).addTo(map);
             }}
 
             map.fitBounds(routePolyline.getBounds(), {{ padding: [60, 60] }});
+            populateJourneyFeed();
+        }}
+
+        function populateJourneyFeed() {{
+            const list = document.getElementById('drawer-list');
+            if (!list) return;
+            list.innerHTML = '';
+
+            currentPoints.forEach((pt, idx) => {{
+                const card = document.createElement('div');
+                card.className = `waypoint-card ${{idx === currentIndex ? 'active' : ''}}`;
+                card.id = `waypoint-card-${{idx}}`;
+
+                let sourceIcon = '📍';
+                if (pt.source_type.includes('photo')) sourceIcon = '📷';
+                if (pt.source_type.includes('whatsapp')) sourceIcon = '💬';
+
+                card.innerHTML = `
+                    <div class="card-top">
+                        <span class="card-badge" style="background:${{getMarkerColor(pt)}}22; color:${{getMarkerColor(pt)}}; border:1px solid ${{getMarkerColor(pt)}}44;">
+                            ${{sourceIcon}} Stop #${{idx + 1}}
+                        </span>
+                        <span class="card-time">${{pt.timestamp_utc ? pt.timestamp_utc.slice(11, 19) : ''}}</span>
+                    </div>
+                    <div class="card-coords">${{pt.latitude.toFixed(5)}}, ${{pt.longitude.toFixed(5)}}</div>
+                    <div class="card-meta">
+                        <span>${{pt.inferred_mode || 'Point'}}</span>
+                        <span>${{pt.speed_kmh ? pt.speed_kmh.toFixed(1) + ' km/h' : '0 km/h'}}</span>
+                    </div>
+                `;
+                card.onclick = () => {{
+                    setScrubberIndex(idx);
+                    map.flyTo([pt.latitude, pt.longitude], 16, {{ duration: 0.8 }});
+                }};
+                list.appendChild(card);
+            }});
+        }}
+
+        function toggleDrawer() {{
+            const drawer = document.getElementById('journey-drawer');
+            if (drawer) drawer.classList.toggle('collapsed');
+        }}
+
+        function filterFeed(val) {{
+            const q = val.toLowerCase().trim();
+            const cards = document.querySelectorAll('.waypoint-card');
+            cards.forEach((c, idx) => {{
+                const pt = currentPoints[idx];
+                const text = `${{pt.file_name}} ${{pt.timestamp_utc}} ${{pt.latitude}} ${{pt.longitude}} ${{pt.source_type}}`.toLowerCase();
+                c.style.display = text.includes(q) ? 'block' : 'none';
+            }});
         }}
 
         function setScrubberIndex(idx) {{
@@ -1169,11 +1383,17 @@ def generate_interactive_map_html(
             document.getElementById('time-slider').value = idx;
             document.getElementById('scrubber-waypoint').innerText = `Waypoint ${{idx + 1}} of ${{currentPoints.length}}`;
             document.getElementById('scrubber-timestamp').innerText = pt.timestamp_utc;
-            document.getElementById('scrubber-speed').innerText = `Speed: ${{pt.speed_kmh || 0.0}} km/h | Mode: ${{pt.inferred_mode || 'N/A'}}`;
+            document.getElementById('scrubber-speed').innerText = `Speed: ${{pt.speed_kmh ? pt.speed_kmh.toFixed(1) : '0.0'}} km/h | Mode: ${{pt.inferred_mode || 'N/A'}}`;
 
             if (animatedTargetMarker) {{
                 animatedTargetMarker.setLatLng([pt.latitude, pt.longitude]);
             }}
+
+            document.querySelectorAll('.waypoint-card').forEach((c, i) => {{
+                c.classList.toggle('active', i === idx);
+            }});
+            const activeCard = document.getElementById(`waypoint-card-${{idx}}`);
+            if (activeCard) activeCard.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
         }}
 
         function onScrub(val) {{
