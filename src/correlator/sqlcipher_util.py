@@ -38,7 +38,7 @@ def is_plain_sqlite(path) -> bool:
     """Check if file can be read as plain SQLite."""
     uri = Path(path).resolve().as_uri() + "?mode=ro"
     try:
-        con = sqlite3.connect(uri, uri=True)
+        con = sqlite3.connect(uri, uri=True, timeout=5.0)
         try:
             con.execute("SELECT count(*) FROM sqlite_master").fetchone()
             return True
@@ -81,7 +81,7 @@ def try_key(db_path, key_bytes: bytes, profile: dict) -> bool:
     try:
         with _suppress_c_stderr():
             uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-            con = sqlcipher.connect(uri, uri=True)
+            con = sqlcipher.connect(uri, uri=True, timeout=5.0)
             con.execute(f"PRAGMA key = \"x'{hex_key}'\";")
             for p in profile["pragmas"]:
                 con.execute(p)
@@ -109,7 +109,7 @@ def export_decrypted(src_path, dest_path, key_bytes: bytes, profile: dict) -> No
     uri = Path(src_path).resolve().as_uri() + "?mode=ro"
     con = None
     try:
-        con = sqlcipher.connect(uri, uri=True)
+        con = sqlcipher.connect(uri, uri=True, timeout=10.0)
         con.execute(f"PRAGMA key = \"x'{hex_key}'\";")
         for p in profile["pragmas"]:
             con.execute(p)

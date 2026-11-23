@@ -1,10 +1,14 @@
 import plistlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 DB_EXTENSIONS: Set[str] = {".sqlite", ".sqlite3", ".db", ".sqlitedb", ".storedata"}
 JOURNAL_SUFFIXES: Set[str] = {"-wal", "-shm", "-journal"}
+
+# Regex to strip 10-character Apple Developer Team ID prefixes (e.g. 'ABC1234567.org.example.app')
+TEAM_ID_PREFIX_RE = re.compile(r"^[A-Z0-9]{10}\.(.+)$")
 
 
 @dataclass
@@ -21,17 +25,30 @@ class DiscoveredDatabase:
     has_journal: bool = False
 
 
+def _clean_bundle_id(raw_id: Optional[str]) -> Optional[str]:
+    """Cleans and normalizes bundle IDs, stripping Team ID prefixes if present."""
+    if not raw_id:
+        return None
+    s = str(raw_id).strip()
+    m = TEAM_ID_PREFIX_RE.match(s)
+    if m:
+        return m.group(1)
+    return s
+
+
 def _find_container_info(db_path: Path, root: Path) -> Dict[str, Optional[str]]:
     """
     Climbs up the directory hierarchy from db_path up to root looking for
-    .com.apple.mobile_container_manager.metadata.plist.
-    Extracts bundle_id (MCMMetadataIdentifier), container_uuid, and container_type.
+    .com.apple.mobile_container_manager.metadata.plist (or fallback Info.plist).
+    Extracts bundle_id, container_uuid, and container_type across all iOS versions (including iOS 16, 17, 18).
     """
     curr = db_path.parent
     root_resolved = root.resolve()
 
     while True:
         plist_path = curr / ".com.apple.mobile_container_manager.metadata.plist"
+        fallback_info_plist = curr / "Info.plist"
+
         if plist_path.is_file():
             bundle_id = None
             category = None
@@ -53,12 +70,32 @@ def _find_container_info(db_path: Path, root: Path) -> Dict[str, Optional[str]]:
                 container_type = "Application"
             elif "PluginKitPlugin" in parts or category == 4:
                 container_type = "PluginKitPlugin"
+            elif "SystemGroup" in parts or category == 8:
+                container_type = "SystemGroup"
+            elif "SystemData" in parts or category == 5:
+                container_type = "SystemData"
 
+            cleaned_id = _clean_bundle_id(bundle_id)
             return {
-                "bundle_id": str(bundle_id) if bundle_id else None,
+                "bundle_id": cleaned_id,
                 "container_uuid": container_uuid,
                 "container_type": container_type,
             }
+
+        # Fallback for extractions where hidden metadata plists were stripped
+        elif fallback_info_plist.is_file() and curr != root_resolved:
+            try:
+                with open(fallback_info_plist, "rb") as f:
+                    info_data = plistlib.load(f)
+                    if isinstance(info_data, dict) and "CFBundleIdentifier" in info_data:
+                        cleaned_id = _clean_bundle_id(info_data.get("CFBundleIdentifier"))
+                        return {
+                            "bundle_id": cleaned_id,
+                            "container_uuid": curr.name,
+                            "container_type": "Application",
+                        }
+            except Exception:
+                pass
 
         if curr.resolve() == root_resolved or curr.parent == curr:
             break
@@ -75,7 +112,7 @@ def scan_extraction(root: str | Path) -> List[DiscoveredDatabase]:
     """
     Recursively scans extraction root directory for SQLite databases.
     Identifies paired WAL / SHM / journal files and associates databases with
-    their container metadata.
+    their container metadata across all modern iOS formats (iOS 15 through 18).
     Returns list of DiscoveredDatabase sorted by relative path.
     """
     root = Path(root).resolve()
@@ -84,8 +121,16 @@ def scan_extraction(root: str | Path) -> List[DiscoveredDatabase]:
 
     databases: List[DiscoveredDatabase] = []
 
-    for file_path in root.rglob("*"):
-        if not file_path.is_file():
+    try:
+        entries = list(root.rglob("*"))
+    except (PermissionError, OSError) as e:
+        entries = []
+
+    for file_path in entries:
+        try:
+            if not file_path.is_file():
+                continue
+        except (PermissionError, OSError):
             continue
 
         lower_name = file_path.name.lower()
@@ -98,8 +143,11 @@ def scan_extraction(root: str | Path) -> List[DiscoveredDatabase]:
         if suffix not in DB_EXTENSIONS:
             continue
 
-        relpath = file_path.relative_to(root).as_posix()
-        size_bytes = file_path.stat().st_size
+        try:
+            relpath = file_path.relative_to(root).as_posix()
+            size_bytes = file_path.stat().st_size
+        except (PermissionError, OSError):
+            continue
 
         parent = file_path.parent
         wal_path = parent / (file_path.name + "-wal")
