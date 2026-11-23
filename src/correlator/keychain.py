@@ -8,6 +8,47 @@ from correlator.sqlcipher_util import fingerprint
 
 HINT_WORDS = ["key", "cipher", "grdb", "database", "sqlcipher", "encrypt"]
 
+# Protection class descriptions conforming to Apple iOS Security Guide
+PROTECTION_CLASSES = {
+    "ck": ("Class C (AfterFirstUnlock)", "Accessible after device is unlocked once post-boot until power off.", False),
+    "ksecattraccessibleafterfirstunlock": ("Class C (AfterFirstUnlock)", "Accessible after device is unlocked once post-boot until power off.", False),
+    "cku": ("Class C (AfterFirstUnlockThisDeviceOnly)", "Device-bound; accessible after first unlock; not migrated in backups.", False),
+    "ksecattraccessibleafterfirstunlockthisdeviceonly": ("Class C (AfterFirstUnlockThisDeviceOnly)", "Device-bound; accessible after first unlock; not migrated in backups.", False),
+    "ak": ("Class A (WhenUnlocked)", "Accessible only while device is currently unlocked by the user.", False),
+    "ksecattraccessiblewhenunlocked": ("Class A (WhenUnlocked)", "Accessible only while device is currently unlocked by the user.", False),
+    "aku": ("Class A (WhenUnlockedThisDeviceOnly)", "Device-bound; accessible only while device is currently unlocked.", False),
+    "ksecattraccessiblewhenunlockedthisdeviceonly": ("Class A (WhenUnlockedThisDeviceOnly)", "Device-bound; accessible only while device is currently unlocked.", False),
+    "dku": ("Class D (Always)", "Accessible at all times, even before device unlock (legacy/deprecated).", False),
+    "ksecattraccessiblealways": ("Class D (Always)", "Accessible at all times, even before device unlock (legacy/deprecated).", False),
+    "akpu": ("Class A (WhenPasscodeSetThisDeviceOnly)", "Requires active device passcode set; device-bound.", False),
+    "ksecattraccessiblewhenpasscodesetthisdeviceonly": ("Class A (WhenPasscodeSetThisDeviceOnly)", "Requires active device passcode set; device-bound.", False),
+}
+
+
+def classify_protection_class(raw_pdmn: str, access_control: str = "") -> Tuple[str, str, bool]:
+    """
+    Classifies Apple Data Protection Class and Biometric / Secure Enclave flags.
+    Returns (protection_class_name, description, is_biometric).
+    """
+    clean_pdmn = str(raw_pdmn or "").strip().lower()
+    clean_ac = str(access_control or "").strip().lower()
+
+    is_biometric = any(b in clean_ac or b in clean_pdmn for b in ("biometry", "touchid", "faceid", "userpresence"))
+    
+    if clean_pdmn in PROTECTION_CLASSES:
+        name, desc, _ = PROTECTION_CLASSES[clean_pdmn]
+        return name, desc, is_biometric
+
+    # Partial / substring matching
+    for k, (name, desc, _) in PROTECTION_CLASSES.items():
+        if k in clean_pdmn:
+            return name, desc, is_biometric
+
+    if not clean_pdmn:
+        return "Unspecified", "Protection class not explicitly recorded in export.", is_biometric
+
+    return clean_pdmn, f"Custom or raw protection domain: {clean_pdmn}", is_biometric
+
 
 def load_keychain(path: str | Path) -> Tuple[List[Dict[str, Any]], int]:
     """
@@ -58,6 +99,9 @@ def load_keychain(path: str | Path) -> Tuple[List[Dict[str, Any]], int]:
         service = str(item.get("service") or "")
         account = str(item.get("account") or "")
         access_group = str(item.get("access_group") or "")
+        raw_pdmn = str(item.get("protection_class") or item.get("pdmn") or item.get("accessible") or "")
+        access_ctrl = str(item.get("access_control") or item.get("acflags") or "")
+        prot_class, prot_desc, is_bio = classify_protection_class(raw_pdmn, access_ctrl)
 
         rows.append({
             "service": service,
@@ -65,6 +109,9 @@ def load_keychain(path: str | Path) -> Tuple[List[Dict[str, Any]], int]:
             "access_group": access_group,
             "key_bytes": key_bytes,
             "fingerprint": fingerprint(key_bytes),
+            "protection_class": prot_class,
+            "protection_description": prot_desc,
+            "is_biometric": is_bio,
         })
 
     return rows, skipped
@@ -95,6 +142,9 @@ def candidates(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "account": row["account"],
             "access_group": row["access_group"],
             "hint_score": hint_score,
+            "protection_class": row.get("protection_class", "Unspecified"),
+            "protection_description": row.get("protection_description", ""),
+            "is_biometric": row.get("is_biometric", False),
         }
 
         if kb not in by_key or hint_score > by_key[kb]["hint_score"]:
